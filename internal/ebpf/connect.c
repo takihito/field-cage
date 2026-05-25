@@ -3,7 +3,21 @@
 #include <linux/bpf.h>
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_endian.h>
-#include <linux/in.h>
+
+// Define UAPI types inline to avoid header-chain issues with -target bpf.
+// These constants and struct layouts are stable in the Linux kernel UAPI.
+#define AF_INET 2
+
+struct in_addr {
+	__u32 s_addr;
+};
+
+struct sockaddr_in {
+	__u16          sin_family;
+	__u16          sin_port;
+	struct in_addr sin_addr;
+	__u8           sin_zero[8];
+};
 
 #define TASK_COMM_LEN 16
 
