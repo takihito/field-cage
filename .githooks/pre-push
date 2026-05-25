@@ -1,0 +1,9 @@
+#!/bin/sh
+set -e
+
+echo "Running unit tests before push..."
+if ! make test; then
+    echo "Tests failed -- push aborted."
+    exit 1
+fi
+echo "Tests passed."
