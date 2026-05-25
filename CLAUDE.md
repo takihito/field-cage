@@ -47,21 +47,36 @@ Key goals:
 
 ## Development Commands
 
-No build system exists yet. Once Go modules are initialized, expected commands will be:
+All build and run steps happen inside Docker (eBPF requires Linux).
 
 ```sh
-# Generate Go bindings from eBPF C code
-go generate ./...
+# First-time setup: generate go.sum
+make tidy
 
-# Build static binary
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o field-cage ./cmd/agent
+# Build Docker image (runs bpf2go + go build internally)
+make build
+
+# Run the agent (requires privileged access for eBPF)
+make run
 
 # Run tests
-go test ./...
+docker run --rm --privileged field-cage:dev go test ./...
 
 # Run a single test
-go test ./path/to/package -run TestName
+docker run --rm --privileged field-cage:dev go test ./internal/ebpf/... -run TestName
 ```
+
+### Code generation
+
+The eBPF C code (`internal/ebpf/connect.c`) is compiled to a Go file by `bpf2go` during `make build`. This generates `connect_bpf_bpfel.go` (little-endian) and embeds the compiled `.o` object. Never edit these generated files directly — edit `connect.c` and rebuild.
+
+### Development Environment Requirements
+
+eBPF development requires Linux. On macOS, the Docker build container provides the environment.
+
+- Linux kernel 5.8+ in the Docker Desktop VM (for ring buffer support)
+- `clang`, `llvm`, `libbpf-dev`, `linux-headers-amd64` — installed in the builder image
+- `bpf2go` — installed in the builder image at the version pinned in `go.mod`
 
 ## Getting Started
 
