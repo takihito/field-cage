@@ -25,7 +25,7 @@ jobs:
         run: |
           sudo apt-get update -q
           sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev
-          sudo apt-get install -y --no-install-recommends "linux-headers-$(dpkg --print-architecture)"
+          sudo apt-get install -y --no-install-recommends "linux-headers-$(uname -r)"
           ARCH=$(uname -m)
           case $ARCH in
             x86_64)  TRIPLET=x86_64-linux-gnu ;;
@@ -61,7 +61,7 @@ jobs:
         run: |
           sudo apt-get update -q
           sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev
-          sudo apt-get install -y --no-install-recommends "linux-headers-$(dpkg --print-architecture)"
+          sudo apt-get install -y --no-install-recommends "linux-headers-$(uname -r)"
           ARCH=$(uname -m)
           case $ARCH in
             x86_64)  TRIPLET=x86_64-linux-gnu ;;
