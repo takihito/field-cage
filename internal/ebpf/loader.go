@@ -72,12 +72,14 @@ func (w *Watcher) Read() (*Event, error) {
 	if err != nil {
 		return nil, err
 	}
+	return parseEvent(record.RawSample)
+}
 
+func parseEvent(data []byte) (*Event, error) {
 	var raw connectEvent
-	if err := binary.Read(bytes.NewReader(record.RawSample), binary.NativeEndian, &raw); err != nil {
+	if err := binary.Read(bytes.NewReader(data), binary.NativeEndian, &raw); err != nil {
 		return nil, fmt.Errorf("parse event: %w", err)
 	}
-
 	return &Event{
 		PID:   raw.Pid,
 		TGID:  raw.Tgid,
