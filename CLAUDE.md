@@ -29,7 +29,7 @@ Key goals:
 ## Planned Architecture
 
 ### eBPF component (C)
-- `kprobe/sys_connect` — hooks outbound connection attempts
+- `tracepoint/syscalls/sys_enter_connect` — hooks outbound connection attempts (portable across kernel versions and architectures; prefer over `kprobe/sys_connect` which is symbol-name-dependent)
 - `socket_filter` on port 53 — sniffs DNS packets to build IP→domain mapping
 - `bpf_override_return` — in Block mode, returns an error to reject unauthorized connections
 
@@ -41,7 +41,8 @@ Key goals:
 
 ### GitHub Action
 - Implemented as a Composite Action (`action.yml`), no TypeScript
-- Downloads binary from GitHub Releases via `curl` based on runner OS
+- Downloads binary from GitHub Releases via `curl` with a pinned version tag
+- Verifies the binary with `sha256sum` against a published checksum file before execution
 - Runs as `sudo ./agent --config policy.yml &` in the background
 
 ## Development Commands
