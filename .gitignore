@@ -33,3 +33,7 @@ go.work.sum
 
 # issue
 issues
+
+# bpf2go generated files (produced by `go generate ./internal/ebpf/...`)
+internal/ebpf/connect_bpf*.go
+internal/ebpf/connect_bpf*.o
