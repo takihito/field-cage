@@ -2,7 +2,7 @@ IMAGE         ?= field-cage:dev
 BUILDER_IMAGE ?= field-cage:builder
 GOPATH_VOL    ?= field-cage-gopath
 
-.PHONY: tidy build run test setup-hooks
+.PHONY: tidy build run test setup-hooks clean
 
 # Run go mod tidy inside a Go container to generate go.sum (run once before build)
 tidy:
@@ -35,6 +35,11 @@ test:
 		-w /src \
 		$(BUILDER_IMAGE) \
 		sh -c "go generate ./internal/ebpf/... && go test -count=1 ./..."
+
+# Remove bpf2go-generated files and cached Docker volumes
+clean:
+	rm -f internal/ebpf/connect_bpf*.go internal/ebpf/connect_bpf*.o
+	-docker volume rm $(GOPATH_VOL) 2>/dev/null
 
 # Configure git to use the committed .githooks/ directory.
 # Run once after cloning: make setup-hooks
