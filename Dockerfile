@@ -35,6 +35,6 @@ RUN CGO_ENABLED=0 GOOS=linux \
     go build -trimpath -o /out/field-cage ./cmd/agent
 
 # Stage 2: minimal runtime image
-FROM gcr.io/distroless/static
+FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=builder /out/field-cage /field-cage
 ENTRYPOINT ["/field-cage"]

@@ -31,7 +31,7 @@ test:
 	docker build --target builder -t $(BUILDER_IMAGE) -q .
 	docker run --rm \
 		-v "$(CURDIR):/src" \
-		-v "$(GOPATH_VOL):/root/go" \
+		-v "$(GOPATH_VOL):/go" \
 		-w /src \
 		$(BUILDER_IMAGE) \
 		sh -c "go generate ./internal/ebpf/... && go test -count=1 ./..."

@@ -59,23 +59,24 @@ make build
 # Run the agent (requires privileged access for eBPF)
 make run
 
-# Run tests
-docker run --rm --privileged field-cage:dev go test ./...
+# Run unit tests (builder image, no privileges needed)
+make test
 
 # Run a single test
-docker run --rm --privileged field-cage:dev go test ./internal/ebpf/... -run TestName
+docker run --rm field-cage:builder sh -c \
+  "go generate ./internal/ebpf/... && go test ./internal/ebpf/... -run TestName"
 ```
 
 ### Code generation
 
-The eBPF C code (`internal/ebpf/connect.c`) is compiled to a Go file by `bpf2go` during `make build`. This generates `connect_bpf_bpfel.go` (little-endian) and embeds the compiled `.o` object. Never edit these generated files directly — edit `connect.c` and rebuild.
+The eBPF C source (`internal/ebpf/bpf/connect.c`) is compiled by `bpf2go` into Go bindings. This generates `connect_bpfel.go` (little-endian) and `connect_bpfeb.go` (big-endian), each embedding the compiled `.o` object. These files are generated artifacts — edit `bpf/connect.c` and re-run `go generate`, do not edit the generated files directly.
 
 ### Development Environment Requirements
 
 eBPF development requires Linux. On macOS, the Docker build container provides the environment.
 
 - Linux kernel 5.8+ in the Docker Desktop VM (for ring buffer support)
-- `clang`, `llvm`, `libbpf-dev`, `linux-headers-amd64` — installed in the builder image
+- `clang`, `llvm`, `libbpf-dev`, `linux-headers-$(uname -r)` — installed in the builder image
 - `bpf2go` — installed in the builder image at the version pinned in `go.mod`
 
 ## Getting Started

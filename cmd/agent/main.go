@@ -15,17 +15,23 @@ func main() {
 	if err != nil {
 		log.Fatalf("field-cage: failed to start: %v", err)
 	}
-	defer watcher.Close()
+	defer func() {
+		if err := watcher.Close(); err != nil {
+			log.Printf("field-cage: close error: %v", err)
+		}
+	}()
 
 	fmt.Fprintln(os.Stderr, "field-cage: watching outbound connections (Ctrl+C to stop)")
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 
+	readErr := make(chan error, 1)
 	go func() {
 		for {
 			ev, err := watcher.Read()
 			if err != nil {
+				readErr <- err
 				return
 			}
 			fmt.Printf("pid=%-6d tgid=%-6d comm=%-16s dst=%s:%d\n",
@@ -33,6 +39,10 @@ func main() {
 		}
 	}()
 
-	<-sig
-	fmt.Fprintln(os.Stderr, "\nfield-cage: shutting down")
+	select {
+	case <-sig:
+		fmt.Fprintln(os.Stderr, "\nfield-cage: shutting down")
+	case err := <-readErr:
+		log.Fatalf("field-cage: reader error: %v", err)
+	}
 }

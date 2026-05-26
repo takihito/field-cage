@@ -1,4 +1,6 @@
-// Compiled by bpf2go; do not edit directly — use `go generate ./internal/ebpf/...`
+// eBPF C source for field-cage. Edit this file as needed.
+// Build: bpf2go compiles it into Go bindings via `go generate ./internal/ebpf/...`
+// Do NOT edit the generated connect_bpf*.go / connect_bpf*.o files — regenerate instead.
 
 #include <linux/bpf.h>
 #include <bpf/bpf_helpers.h>

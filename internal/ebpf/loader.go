@@ -3,6 +3,7 @@ package ebpf
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"net"
 
@@ -89,11 +90,17 @@ func parseEvent(data []byte) (*Event, error) {
 	}, nil
 }
 
-// Close releases all eBPF resources.
-func (w *Watcher) Close() {
-	w.reader.Close()
-	w.tp.Close()
+// Close releases all eBPF resources and returns the first error encountered.
+func (w *Watcher) Close() error {
+	var errs []error
+	if err := w.reader.Close(); err != nil {
+		errs = append(errs, fmt.Errorf("reader: %w", err))
+	}
+	if err := w.tp.Close(); err != nil {
+		errs = append(errs, fmt.Errorf("tracepoint: %w", err))
+	}
 	w.objs.Close()
+	return errors.Join(errs...)
 }
 
 func nullTerminatedString(b []byte) string {

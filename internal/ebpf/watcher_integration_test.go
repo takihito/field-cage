@@ -4,7 +4,9 @@ package ebpf_test
 
 import (
 	"context"
+	"errors"
 	"net"
+	"os"
 	"testing"
 	"time"
 
@@ -17,9 +19,24 @@ import (
 func TestWatcherCapturesIPv4Connect(t *testing.T) {
 	watcher, err := ebpf.NewWatcher()
 	if err != nil {
-		t.Skipf("cannot attach eBPF tracepoint (needs CAP_BPF/root): %v", err)
+		// Skip only for known permission/unsupported errors so that CI fails
+		// loudly if the loader or attach path breaks for any other reason.
+		if errors.Is(err, os.ErrPermission) {
+			t.Skipf("skipping: insufficient privileges (needs CAP_BPF/root): %v", err)
+		}
+		t.Fatalf("NewWatcher: %v", err)
 	}
 	defer watcher.Close()
+
+	// Start a local TCP listener so the test is self-contained and not
+	// dependent on external network reachability.
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+
+	targetAddr := ln.Addr().(*net.TCPAddr)
 
 	// Collect events in the background until the test ends.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -39,23 +56,18 @@ func TestWatcherCapturesIPv4Connect(t *testing.T) {
 		}
 	}()
 
-	// Trigger an outbound TCP connect from this process.
-	// 1.1.1.1:443 is Cloudflare DNS-over-HTTPS — reachable on GitHub Actions runners.
-	const targetAddr = "1.1.1.1:443"
-	conn, err := net.DialTimeout("tcp", targetAddr, 3*time.Second)
+	// Trigger an outbound connect from this process to the local listener.
+	conn, err := net.DialTimeout("tcp4", targetAddr.String(), 3*time.Second)
 	if err != nil {
-		t.Logf("dial %s failed (connection may be filtered): %v", targetAddr, err)
+		t.Fatalf("dial %s: %v", targetAddr, err)
 	}
-	if conn != nil {
-		conn.Close()
-	}
+	conn.Close()
 
-	targetIP := net.ParseIP("1.1.1.1").To4()
-
+	// Wait for the eBPF event that matches our connect.
 	for {
 		select {
 		case ev := <-events:
-			if ev.DAddr.Equal(targetIP) && ev.DPort == 443 {
+			if ev.DAddr.Equal(targetAddr.IP) && ev.DPort == uint16(targetAddr.Port) {
 				t.Logf("captured: pid=%d comm=%s dst=%s:%d", ev.PID, ev.Comm, ev.DAddr, ev.DPort)
 				return
 			}
