@@ -1,4 +1,4 @@
-//go:build integration
+//go:build linux && integration
 
 package ebpf_test
 

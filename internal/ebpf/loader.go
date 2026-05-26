@@ -1,3 +1,5 @@
+//go:build linux
+
 package ebpf
 
 import (
@@ -5,6 +7,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 
 	"github.com/cilium/ebpf/link"
@@ -14,11 +17,12 @@ import (
 
 // Event represents a captured outbound IPv4 connection attempt.
 type Event struct {
-	PID   uint32
-	TGID  uint32
-	DPort uint16
-	DAddr net.IP
-	Comm  string
+	PID    uint32
+	TGID   uint32
+	DPort  uint16
+	DAddr  net.IP
+	Comm   string
+	Domain string // resolved domain name, empty if not yet in DNS cache
 }
 
 // connectEvent mirrors the C struct event layout for binary deserialization.
@@ -32,10 +36,13 @@ type connectEvent struct {
 }
 
 // Watcher attaches to the sys_enter_connect tracepoint and streams Events.
+// It also runs a DNS cache that annotates events with resolved domain names.
 type Watcher struct {
-	objs   ConnectObjects
-	tp     link.Link
-	reader *ringbuf.Reader
+	objs       ConnectObjects
+	tp         link.Link
+	reader     *ringbuf.Reader
+	dnsCache   *DNSCache
+	dnsWatcher *dnsWatcher
 }
 
 // NewWatcher loads the eBPF program and attaches it to the tracepoint.
@@ -63,7 +70,15 @@ func NewWatcher() (*Watcher, error) {
 		return nil, fmt.Errorf("open ringbuf reader: %w", err)
 	}
 
-	return &Watcher{objs: objs, tp: tp, reader: reader}, nil
+	cache := newDNSCache()
+	dw, err := newDNSWatcher(cache)
+	if err != nil {
+		// DNS capture is best-effort; connections are still logged without domain names.
+		log.Printf("field-cage: DNS capture unavailable (connections will show IPs only): %v", err)
+		dw = nil
+	}
+
+	return &Watcher{objs: objs, tp: tp, reader: reader, dnsCache: cache, dnsWatcher: dw}, nil
 }
 
 // Read blocks until a connection event is available and returns it.
@@ -73,7 +88,12 @@ func (w *Watcher) Read() (*Event, error) {
 	if err != nil {
 		return nil, err
 	}
-	return parseEvent(record.RawSample)
+	ev, err := parseEvent(record.RawSample)
+	if err != nil {
+		return nil, err
+	}
+	ev.Domain = w.dnsCache.Lookup(ev.DAddr)
+	return ev, nil
 }
 
 func parseEvent(data []byte) (*Event, error) {
@@ -93,6 +113,11 @@ func parseEvent(data []byte) (*Event, error) {
 // Close releases all eBPF resources and returns the first error encountered.
 func (w *Watcher) Close() error {
 	var errs []error
+	if w.dnsWatcher != nil {
+		if err := w.dnsWatcher.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
 	if err := w.reader.Close(); err != nil {
 		errs = append(errs, fmt.Errorf("reader: %w", err))
 	}

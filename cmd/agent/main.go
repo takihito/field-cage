@@ -34,8 +34,12 @@ func main() {
 				readErr <- err
 				return
 			}
+			dst := ev.DAddr.String()
+			if ev.Domain != "" {
+				dst = fmt.Sprintf("%s (%s)", ev.Domain, ev.DAddr)
+			}
 			fmt.Printf("pid=%-6d tgid=%-6d comm=%-16s dst=%s:%d\n",
-				ev.PID, ev.TGID, ev.Comm, ev.DAddr, ev.DPort)
+				ev.PID, ev.TGID, ev.Comm, dst, ev.DPort)
 		}
 	}()
 
