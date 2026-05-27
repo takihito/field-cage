@@ -129,8 +129,17 @@ func TestReadDNSName_WithPointer(t *testing.T) {
 	ip := net.IP{1, 2, 3, 4}
 	msg := buildDNSResponse(domain, ip)
 
-	// Verify pointer in answer section is resolved correctly.
-	got, _, ok := readDNSName(msg, 12)
+	// The answer NAME starts at offset 29:
+	//   12 (header)
+	// +  8 (0x07 "example")
+	// +  4 (0x03 "com")
+	// +  1 (0x00 root label)     = 13 bytes QNAME
+	// +  2 (QTYPE) + 2 (QCLASS) =  4 bytes → question = 17 bytes
+	// = 12 + 17 = 29
+	// At offset 29 lies 0xc0 0x0c — the compression pointer — which must be
+	// followed back to offset 12 to reconstruct "example.com".
+	const answerNameOffset = 29
+	got, _, ok := readDNSName(msg, answerNameOffset)
 	if !ok {
 		t.Fatal("readDNSName returned not ok")
 	}

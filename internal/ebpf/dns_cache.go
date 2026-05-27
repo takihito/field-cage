@@ -12,10 +12,8 @@ import (
 	"syscall"
 
 	"github.com/cilium/ebpf/ringbuf"
+	"golang.org/x/sys/unix"
 )
-
-// soAttachBPF is SO_ATTACH_BPF (Linux kernel constant 50).
-const soAttachBPF = 50
 
 // DNSCache maps IPv4 addresses to the domain name resolved to that address.
 // It is safe for concurrent use.
@@ -66,7 +64,7 @@ func newDNSWatcher(cache *DNSCache) (*dnsWatcher, error) {
 		return nil, fmt.Errorf("create raw socket: %w", err)
 	}
 
-	if err := syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, soAttachBPF, objs.CaptureDns.FD()); err != nil {
+	if err := syscall.SetsockoptInt(fd, syscall.SOL_SOCKET, unix.SO_ATTACH_BPF, objs.CaptureDns.FD()); err != nil {
 		syscall.Close(fd) //nolint:errcheck
 		objs.Close()
 		return nil, fmt.Errorf("attach DNS socket filter: %w", err)
