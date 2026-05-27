@@ -1,8 +1,9 @@
 IMAGE         ?= field-cage:dev
+DEV_IMAGE     ?= field-cage:dev-ubuntu
 BUILDER_IMAGE ?= field-cage:builder
 GOPATH_VOL    ?= field-cage-gopath
 
-.PHONY: tidy build run test setup-hooks clean
+.PHONY: tidy build run run-dev test setup-hooks clean
 
 # Run go mod tidy inside a Go container to generate go.sum (run once before build)
 tidy:
@@ -12,9 +13,9 @@ tidy:
 		golang:1.22-bullseye \
 		go mod tidy
 
-# Build the Docker image (compiles eBPF + Go binary)
+# Build the release Docker image (distroless runtime, matches distributed artifact)
 build:
-	docker build -t $(IMAGE) .
+	docker build --target runtime -t $(IMAGE) .
 
 # Run with the privileges required for eBPF
 run:
@@ -23,6 +24,22 @@ run:
 		-v /sys/kernel/debug:/sys/kernel/debug:ro \
 		-v /sys/fs/bpf:/sys/fs/bpf \
 		$(IMAGE)
+
+# Local verification: Ubuntu-based image with curl/wget so traffic can be
+# generated inside the same container as the agent. Runs detached; generate
+# traffic and watch logs as printed below.
+run-dev:
+	docker build --target runtime-dev -t $(DEV_IMAGE) .
+	-docker rm -f fc-dev 2>/dev/null
+	docker run --rm -d --privileged --name fc-dev \
+		-v /sys/kernel/debug:/sys/kernel/debug:ro \
+		-v /sys/fs/bpf:/sys/fs/bpf \
+		$(DEV_IMAGE)
+	@echo ""
+	@echo "agent started (container: fc-dev). Verify with:"
+	@echo "  docker exec fc-dev curl -s http://example.com -o /dev/null"
+	@echo "  docker logs -f fc-dev"
+	@echo "Stop with: docker stop fc-dev"
 
 # Run unit tests inside the builder container.
 # Host source is mounted so the current working tree is tested.
