@@ -52,11 +52,13 @@ int capture_dns(struct __sk_buff *skb)
 	if (dns_len <= 8)
 		return 0;
 	dns_len -= 8;
-	if (dns_len > DNS_MAX_LEN)
-		dns_len = DNS_MAX_LEN;
 
-	/* Explicit bound check so the verifier knows dns_len <= DNS_MAX_LEN */
-	if (dns_len == 0 || dns_len > DNS_MAX_LEN)
+	/* Mask to bound dns_len to 0..DNS_MAX_LEN-1. DNS_MAX_LEN is a power of two,
+	 * so the mask gives the verifier an exact non-negative range for the
+	 * bpf_skb_load_bytes length argument; a plain clamp leaves the signed
+	 * minimum unproven and the verifier rejects the call. */
+	dns_len &= DNS_MAX_LEN - 1;
+	if (dns_len == 0)
 		return 0;
 
 	struct dns_event *ev = bpf_ringbuf_reserve(&dns_events, sizeof(*ev), 0);
