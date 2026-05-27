@@ -37,3 +37,5 @@ issues
 # bpf2go generated files (produced by `go generate ./internal/ebpf/...`)
 internal/ebpf/connect_bpf*.go
 internal/ebpf/connect_bpf*.o
+internal/ebpf/dns_bpf*.go
+internal/ebpf/dns_bpf*.o
