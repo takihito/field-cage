@@ -3,7 +3,7 @@ DEV_IMAGE     ?= field-cage:dev-ubuntu
 BUILDER_IMAGE ?= field-cage:builder
 GOPATH_VOL    ?= field-cage-gopath
 
-.PHONY: tidy build run run-dev test setup-hooks clean
+.PHONY: tidy build run run-dev stop-dev test setup-hooks clean
 
 # Run go mod tidy inside a Go container to generate go.sum (run once before build)
 tidy:
@@ -39,7 +39,11 @@ run-dev:
 	@echo "agent started (container: fc-dev). Verify with:"
 	@echo "  docker exec fc-dev curl -s http://example.com -o /dev/null"
 	@echo "  docker logs -f fc-dev"
-	@echo "Stop with: docker stop fc-dev"
+	@echo "Stop with: make stop-dev"
+
+# Stop the local verification container started by run-dev
+stop-dev:
+	docker stop fc-dev
 
 # Run unit tests inside the builder container.
 # Host source is mounted so the current working tree is tested.
