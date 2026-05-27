@@ -22,7 +22,9 @@ make build
 # エージェントを特権付きで実行（eBPF に必要）
 make run
 
-# ユニットテスト + インテグレーションテスト（Docker コンテナ内）
+# ユニットテスト（Docker コンテナ内）
+# ※ インテグレーションテスト（//go:build integration）は CI の integration ジョブで実行される
+#   ローカルで実行する場合: sudo env "PATH=$PATH" go test -tags integration ./internal/ebpf/...
 make test
 
 # 単一テストの実行

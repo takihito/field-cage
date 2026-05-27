@@ -35,9 +35,12 @@ RUN CGO_ENABLED=0 GOOS=linux \
     go build -trimpath -o /out/field-cage ./cmd/agent
 
 # Stage 2 (release): minimal runtime image — matches the distributed artifact.
-# eBPF requires CAP_BPF / CAP_SYS_ADMIN on the running process. The :nonroot
-# variant runs as UID 65532, which cannot hold capabilities even under
-# --privileged, so BPF_PROG_LOAD returns EPERM. Use the root variant.
+# eBPF requires CAP_BPF / CAP_SYS_ADMIN in the process's *effective* capability
+# set. --privileged grants all capabilities to the container, but for non-root
+# processes (UID != 0) the effective set is only populated when file capabilities
+# or ambient capabilities are configured — without them, effective caps are empty
+# even in a privileged container, and BPF_PROG_LOAD returns EPERM. Using the
+# root variant (UID 0) avoids this without requiring extra cap configuration.
 FROM gcr.io/distroless/static-debian12 AS runtime
 COPY --from=builder /out/field-cage /field-cage
 ENTRYPOINT ["/field-cage"]

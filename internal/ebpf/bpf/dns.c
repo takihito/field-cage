@@ -53,10 +53,14 @@ int capture_dns(struct __sk_buff *skb)
 		return 0;
 	dns_len -= 8;
 
-	/* Mask to bound dns_len to 0..DNS_MAX_LEN-1. DNS_MAX_LEN is a power of two,
-	 * so the mask gives the verifier an exact non-negative range for the
-	 * bpf_skb_load_bytes length argument; a plain clamp leaves the signed
-	 * minimum unproven and the verifier rejects the call. */
+	/* Clamp then mask so the verifier can prove dns_len is in [1, DNS_MAX_LEN-1].
+	 * DNS_MAX_LEN (512) is a power of two; masking with DNS_MAX_LEN-1 (511)
+	 * gives a verifier-friendly non-negative range without wrapping to 0.
+	 * Payloads at exactly 512 bytes are capped to 511 first — RFC 1035 UDP DNS
+	 * is limited to 512 bytes total (including the 8-byte UDP header), so the
+	 * actual DNS payload never legitimately reaches 512 bytes. */
+	if (dns_len >= DNS_MAX_LEN)
+		dns_len = DNS_MAX_LEN - 1;
 	dns_len &= DNS_MAX_LEN - 1;
 	if (dns_len == 0)
 		return 0;
@@ -71,6 +75,9 @@ int capture_dns(struct __sk_buff *skb)
 		bpf_ringbuf_discard(ev, 0);
 		return 0;
 	}
+	/* TODO: zero ev->payload[dns_len..] to prevent uninitialized bytes leaking
+	 * to userspace. Deferred to the variable-length ringbuf refactor (task #10)
+	 * which will emit only sizeof(ev->len)+dns_len bytes, eliminating the issue. */
 	bpf_ringbuf_submit(ev, 0);
 
 	/* Return 0: we collect data via ring buffer, not via the socket fd */

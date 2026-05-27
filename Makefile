@@ -56,6 +56,7 @@ test:
 # Remove bpf2go-generated files and cached Docker volumes
 clean:
 	rm -f internal/ebpf/connect_bpf*.go internal/ebpf/connect_bpf*.o
+	rm -f internal/ebpf/dns_bpf*.go internal/ebpf/dns_bpf*.o
 	-docker volume rm $(GOPATH_VOL) 2>/dev/null
 
 # Configure git to use the committed .githooks/ directory.
