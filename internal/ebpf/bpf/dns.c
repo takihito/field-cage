@@ -53,14 +53,14 @@ int capture_dns(struct __sk_buff *skb)
 		return 0;
 	dns_len -= 8;
 
-	/* Clamp then mask so the verifier can prove dns_len is in [1, DNS_MAX_LEN-1].
-	 * DNS_MAX_LEN (512) is a power of two; masking with DNS_MAX_LEN-1 (511)
-	 * gives a verifier-friendly non-negative range without wrapping to 0.
-	 * Payloads at exactly 512 bytes are capped to 511 first — RFC 1035 UDP DNS
-	 * is limited to 512 bytes total (including the 8-byte UDP header), so the
-	 * actual DNS payload never legitimately reaches 512 bytes. */
-	if (dns_len >= DNS_MAX_LEN)
-		dns_len = DNS_MAX_LEN - 1;
+	/* Mask dns_len to [0, DNS_MAX_LEN-1] so the verifier can prove R4 is
+	 * non-negative for the bpf_skb_load_bytes call below. A plain clamp leaves
+	 * the verifier's signed-min unproven and causes EPERM on load.
+	 * DNS_MAX_LEN (512) is a power of two, so masking with 511 gives a tight
+	 * unsigned range [0, 511] that the verifier accepts.
+	 * RFC 1035 limits UDP DNS to 512 bytes total (8-byte UDP header included),
+	 * so the actual DNS payload after subtracting the header is ≤ 504 bytes.
+	 * 504 & 511 == 504, so no valid DNS payload is ever dropped by this mask. */
 	dns_len &= DNS_MAX_LEN - 1;
 	if (dns_len == 0)
 		return 0;
