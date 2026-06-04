@@ -1,0 +1,76 @@
+name: Smoke Test
+
+on:
+  push:
+    branches: [main, "feature/**"]
+  pull_request:
+
+jobs:
+  # ---------------------------------------------------------------
+  # Smoke test: build the binary, run it, generate real outbound
+  # traffic, and verify the connection log appears in CI output.
+  # ---------------------------------------------------------------
+  smoke-test:
+    name: Smoke test (connection logging)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+          cache: true
+
+      - name: Install eBPF build dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev
+          sudo apt-get install -y --no-install-recommends "linux-headers-$(uname -r)"
+          ARCH=$(uname -m)
+          case $ARCH in
+            x86_64)  TRIPLET=x86_64-linux-gnu ;;
+            aarch64) TRIPLET=aarch64-linux-gnu ;;
+          esac
+          sudo ln -sf /usr/include/${TRIPLET}/asm /usr/include/asm
+
+      - name: Install bpf2go
+        run: go install github.com/cilium/ebpf/cmd/bpf2go@v0.14.0
+
+      - name: Generate eBPF bindings
+        run: go generate ./internal/ebpf/...
+
+      - name: Build field-cage binary
+        run: CGO_ENABLED=0 GOOS=linux go build -trimpath -o /tmp/field-cage ./cmd/agent
+
+      - name: Start field-cage agent
+        run: |
+          sudo /tmp/field-cage > /tmp/fc-log.txt 2>&1 &
+          echo "FC_PID=$!" >> "$GITHUB_ENV"
+          sleep 2
+
+      - name: Generate outbound traffic
+        run: |
+          curl -s https://github.com    -o /dev/null
+          curl -s https://example.com   -o /dev/null
+          curl -s https://api.github.com -o /dev/null
+          sleep 1
+
+      - name: Show field-cage connection log
+        run: |
+          echo "=== field-cage captured connections ==="
+          cat /tmp/fc-log.txt
+          echo "======================================="
+          LINES=$(grep -c "dst=" /tmp/fc-log.txt || true)
+          echo "Total connection events: ${LINES}"
+
+      - name: Verify at least one connection was captured
+        run: |
+          if ! grep -q "dst=" /tmp/fc-log.txt; then
+            echo "ERROR: no connection events captured" >&2
+            exit 1
+          fi
+
+      - name: Stop field-cage agent
+        if: always()
+        run: sudo pkill -f /tmp/field-cage || true
