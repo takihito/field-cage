@@ -93,7 +93,11 @@ func main() {
 
 			verdict := "ALLOW"
 			if engine != nil && !engine.Allow(ev.Domain, net.IP(ev.DAddr)) {
-				verdict = "DENY"
+				if ev.Domain == "" {
+					verdict = "DENY(no-domain)"
+				} else {
+					verdict = "DENY(not-in-policy)"
+				}
 				if effectiveMode == policy.ModeBlock {
 					// Use the incremental AddBlockedIP to avoid O(n) map rebuild
 					// on every new denial. The BPF map cap is 4096 entries.
@@ -103,7 +107,7 @@ func main() {
 				}
 			}
 
-			fmt.Printf("verdict=%-5s pid=%-6d tgid=%-6d comm=%-16s dst=%s:%d\n",
+			fmt.Printf("verdict=%-20s pid=%-6d tgid=%-6d comm=%-16s dst=%s:%d\n",
 				verdict, ev.PID, ev.TGID, ev.Comm, dst, ev.DPort)
 		}
 	}()
