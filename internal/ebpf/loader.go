@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"log"
 	"net"
-
+	ciliumebpf "github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/ringbuf"
 	"github.com/cilium/ebpf/rlimit"
@@ -37,17 +37,32 @@ type connectEvent struct {
 
 // Watcher attaches to the sys_enter_connect tracepoint and streams Events.
 // It also runs a DNS cache that annotates events with resolved domain names.
+// When blockObjs is non-nil, UpdateBlockList can be used to enforce policy.
 type Watcher struct {
 	objs       ConnectObjects
 	tp         link.Link
 	reader     *ringbuf.Reader
 	dnsCache   *DNSCache
 	dnsWatcher *dnsWatcher
+	blockObjs  *BlockObjects
+	cgroupLink link.Link
 }
 
 // NewWatcher loads the eBPF program and attaches it to the tracepoint.
 // The caller must call Close when done.
 func NewWatcher() (*Watcher, error) {
+	return newWatcher(false)
+}
+
+// NewBlockWatcher is like NewWatcher but also loads the cgroup/connect4
+// enforcement program. Use UpdateBlockList to populate the blocked-IP set.
+// cgroupPath is the path to a writable cgroup v2 directory
+// (e.g. "/sys/fs/cgroup").
+func NewBlockWatcher(cgroupPath string) (*Watcher, error) {
+	return newWatcher(true)
+}
+
+func newWatcher(withBlock bool) (*Watcher, error) {
 	if err := rlimit.RemoveMemlock(); err != nil {
 		return nil, fmt.Errorf("remove memlock rlimit: %w", err)
 	}
@@ -78,7 +93,87 @@ func NewWatcher() (*Watcher, error) {
 		dw = nil
 	}
 
-	return &Watcher{objs: objs, tp: tp, reader: reader, dnsCache: cache, dnsWatcher: dw}, nil
+	w := &Watcher{objs: objs, tp: tp, reader: reader, dnsCache: cache, dnsWatcher: dw}
+
+	if withBlock {
+		if err := w.attachBlock(); err != nil {
+			w.Close() //nolint:errcheck
+			return nil, fmt.Errorf("attach block program: %w", err)
+		}
+	}
+	return w, nil
+}
+
+// attachBlock loads the cgroup/connect4 eBPF program and attaches it to the
+// root cgroup so it can block unauthorized connections system-wide.
+func (w *Watcher) attachBlock() error {
+	var blockObjs BlockObjects
+	if err := LoadBlockObjects(&blockObjs, nil); err != nil {
+		return fmt.Errorf("load block eBPF objects: %w", err)
+	}
+
+	cgroupPath := "/sys/fs/cgroup"
+	cg, err := link.AttachCgroup(link.CgroupOptions{
+		Path:    cgroupPath,
+		Attach:  ciliumebpf.AttachCGroupInet4Connect,
+		Program: blockObjs.BlockConnect,
+	})
+	if err != nil {
+		blockObjs.Close()
+		return fmt.Errorf("attach cgroup/connect4: %w", err)
+	}
+
+	w.blockObjs = &blockObjs
+	w.cgroupLink = cg
+	return nil
+}
+
+// UpdateBlockList replaces the set of blocked IPv4 addresses in the eBPF map.
+// ips is the full set of IPs that should be blocked; any previously blocked
+// IPs not in the new list are removed.
+// No-op if the watcher was not created with NewBlockWatcher.
+func (w *Watcher) UpdateBlockList(ips []net.IP) error {
+	if w.blockObjs == nil {
+		return nil
+	}
+
+	m := w.blockObjs.BlockedIps
+	var blocked uint8 = 1
+
+	// Add all IPs in the new list.
+	newSet := make(map[[4]byte]struct{}, len(ips))
+	for _, ip := range ips {
+		ip4 := ip.To4()
+		if ip4 == nil {
+			continue
+		}
+		var key [4]byte
+		copy(key[:], ip4)
+		newSet[key] = struct{}{}
+		if err := m.Put(key, blocked); err != nil {
+			return fmt.Errorf("update blocked_ips map: %w", err)
+		}
+	}
+
+	// Remove stale entries.
+	var key [4]byte
+	iter := m.Iterate()
+	var val uint8
+	var toDelete [][4]byte
+	for iter.Next(&key, &val) {
+		if _, ok := newSet[key]; !ok {
+			toDelete = append(toDelete, key)
+		}
+	}
+	if err := iter.Err(); err != nil {
+		return fmt.Errorf("iterate blocked_ips map: %w", err)
+	}
+	for _, k := range toDelete {
+		if err := m.Delete(k); err != nil {
+			return fmt.Errorf("delete blocked_ips entry: %w", err)
+		}
+	}
+	return nil
 }
 
 // Read blocks until a connection event is available and returns it.
@@ -117,6 +212,14 @@ func (w *Watcher) Close() error {
 		if err := w.dnsWatcher.Close(); err != nil {
 			errs = append(errs, err)
 		}
+	}
+	if w.cgroupLink != nil {
+		if err := w.cgroupLink.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("cgroup link: %w", err))
+		}
+	}
+	if w.blockObjs != nil {
+		w.blockObjs.Close()
 	}
 	if err := w.reader.Close(); err != nil {
 		errs = append(errs, fmt.Errorf("reader: %w", err))

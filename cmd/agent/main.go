@@ -1,17 +1,56 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/takihito/field-cage/internal/ebpf"
+	"github.com/takihito/field-cage/internal/policy"
+)
+
+var (
+	configPath = flag.String("config", "", "path to YAML policy file (omit to allow all)")
+	mode       = flag.String("mode", "", "enforcement mode: audit or block (overrides policy file)")
 )
 
 func main() {
-	watcher, err := ebpf.NewWatcher()
+	flag.Parse()
+
+	var engine *policy.Engine
+	if *configPath != "" {
+		var err error
+		engine, err = policy.LoadFile(*configPath)
+		if err != nil {
+			log.Fatalf("field-cage: load policy: %v", err)
+		}
+	}
+
+	// --mode flag overrides the mode in the policy file.
+	effectiveMode := policy.ModeAudit
+	if engine != nil {
+		effectiveMode = engine.Mode()
+	}
+	if *mode != "" {
+		effectiveMode = policy.Mode(*mode)
+		switch effectiveMode {
+		case policy.ModeAudit, policy.ModeBlock:
+		default:
+			log.Fatalf("field-cage: invalid --mode %q: must be \"audit\" or \"block\"", *mode)
+		}
+	}
+
+	var watcher *ebpf.Watcher
+	var err error
+	if effectiveMode == policy.ModeBlock {
+		watcher, err = ebpf.NewBlockWatcher("/sys/fs/cgroup")
+	} else {
+		watcher, err = ebpf.NewWatcher()
+	}
 	if err != nil {
 		log.Fatalf("field-cage: failed to start: %v", err)
 	}
@@ -21,7 +60,11 @@ func main() {
 		}
 	}()
 
-	fmt.Fprintln(os.Stderr, "field-cage: watching outbound connections (Ctrl+C to stop)")
+	modeLabel := string(effectiveMode)
+	if engine == nil {
+		modeLabel = "audit (no policy)"
+	}
+	fmt.Fprintf(os.Stderr, "field-cage: watching outbound connections [mode=%s] (Ctrl+C to stop)\n", modeLabel)
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
@@ -34,12 +77,26 @@ func main() {
 				readErr <- err
 				return
 			}
+
 			dst := ev.DAddr.String()
 			if ev.Domain != "" {
 				dst = fmt.Sprintf("%s (%s)", ev.Domain, ev.DAddr)
 			}
-			fmt.Printf("pid=%-6d tgid=%-6d comm=%-16s dst=%s:%d\n",
-				ev.PID, ev.TGID, ev.Comm, dst, ev.DPort)
+
+			verdict := "ALLOW"
+			if engine != nil && !engine.Allow(ev.Domain, net.IP(ev.DAddr)) {
+				verdict = "DENY"
+				if effectiveMode == policy.ModeBlock {
+					// cgroup/connect4 already blocked the connection in the kernel.
+					// Update the map so future connections to this IP are blocked immediately.
+					if err := watcher.UpdateBlockList([]net.IP{ev.DAddr}); err != nil {
+						log.Printf("field-cage: update block list: %v", err)
+					}
+				}
+			}
+
+			fmt.Printf("verdict=%-5s pid=%-6d tgid=%-6d comm=%-16s dst=%s:%d\n",
+				verdict, ev.PID, ev.TGID, ev.Comm, dst, ev.DPort)
 		}
 	}()
 
