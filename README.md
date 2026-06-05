@@ -1,22 +1,21 @@
 # field-cage
 
-GitHub Actions ランナー上の外部通信を監視・制限する軽量 eBPF エージェント。
-サプライチェーン攻撃（不正なデータ送出・外部コードの取得）を検出・防御します。
+A lightweight eBPF agent that monitors and restricts outbound network connections on GitHub Actions runners, designed to detect and prevent supply-chain attacks such as unauthorized data exfiltration or external code fetching during builds.
 
-## 概要
+## Overview
 
-ビルド中に発生する予期しない外部通信（依存関係の差し替え、シークレットの外部送信など）を、Linux カーネルレベルの eBPF でリアルタイムに検知します。
+field-cage hooks into the Linux kernel via eBPF to observe every outbound connection attempt in real time. It maps raw IP addresses to domain names through DNS sniffing, then evaluates each connection against a YAML allowlist.
 
-- **Audit モード** — 全接続をログ出力するだけ。既存のワークフローへの影響なし
-- **Block モード** — YAML ポリシーに含まれない接続を拒否（`EPERM`）
+- **Audit mode** — logs all connections without blocking. Safe to add to any existing workflow
+- **Block mode** — denies connections not listed in the policy (`EPERM` returned to the process)
 
-## 特徴
+## Features
 
-- Node.js 不要・依存ゼロ。完全静的バイナリ一本で動作
-- DNS スニッフィングにより IP を自動でドメイン名に変換
-- allowlist は YAML で管理。ドメイン名・IP アドレスの完全一致指定
+- Zero runtime dependencies. Single fully-static binary, no Node.js required
+- Automatic IP-to-domain mapping via DNS packet sniffing
+- YAML policy: exact domain and IP matching (case-insensitive)
 
-## ログ出力例
+## Log output
 
 ```
 verdict=ALLOW                pid=1234   tgid=1234   comm=curl             dst=api.github.com (140.82.121.5):443
@@ -24,102 +23,102 @@ verdict=DENY(not-in-policy)  pid=1235   tgid=1235   comm=python3          dst=su
 verdict=DENY(no-domain)      pid=1236   tgid=1236   comm=curl             dst=93.184.216.34:80
 ```
 
-| verdict | 意味 |
-|---------|------|
-| `ALLOW` | ポリシーで許可された接続 |
-| `DENY(not-in-policy)` | ドメインがポリシーに含まれない |
-| `DENY(no-domain)` | DNS 未解決（IP のみ判明） |
+| verdict | meaning |
+|---------|---------|
+| `ALLOW` | connection permitted by policy |
+| `DENY(not-in-policy)` | domain resolved but not in the allowlist |
+| `DENY(no-domain)` | IP-only connection; DNS not yet resolved |
 
-## ポリシーファイル
+## Policy file
 
 ```yaml
-mode: block   # audit または block
+mode: block   # audit or block
 
 allowlist:
   - github.com
   - api.github.com
   - codeload.github.com
   - objects.githubusercontent.com
-  - 1.2.3.4        # IP アドレスも指定可能
+  - 1.2.3.4        # raw IP addresses are supported
 ```
 
-> **注意**: ワイルドカード（`*.github.com`）は非対応です。サブドメインは個別に列挙してください。
+> **Note**: Wildcards (`*.github.com`) are not supported. List each subdomain explicitly.
 
-## 使い方
+## Usage
 
 ```sh
-# Audit モード（ポリシーなし・全通信をログ出力）
+# Audit mode — log all connections, no policy file required
 sudo ./field-cage
 
-# Audit モード（ポリシーファイル読み込み）
+# Audit mode with a policy file
 sudo ./field-cage --config policy.yml
 
-# Block モード（ポリシーに含まれない接続を拒否）
+# Block mode — deny connections not in the allowlist
 sudo ./field-cage --config policy.yml --mode block
 ```
 
-## 開発
+## Development
 
-eBPF 開発には Linux が必要です。macOS では Docker コンテナがその環境を提供します。
+eBPF development requires Linux. On macOS, all build and test steps run inside Docker.
 
 ```sh
-# 初回セットアップ（go.sum 生成）
+# First-time setup: generate go.sum
 make tidy
 
-# Docker イメージをビルド（bpf2go + go build を内部実行）
+# Build the Docker image (runs bpf2go + go build internally)
 make build
 
-# エージェントを起動（eBPF に必要な特権アクセス付き）
+# Run the agent with the privileges required for eBPF
 make run
 
-# ローカル検証用コンテナを起動（curl/wget でトラフィック生成可能）
+# Start a local verification container (curl/wget available for traffic generation)
 make run-dev
 
-# run-dev で起動したコンテナを停止
+# Stop the run-dev container
 make stop-dev
 
-# ユニットテストを実行（特権不要）
+# Run unit tests (no privileges needed)
 make test
 
-# git フック設定（プッシュ前に make test を自動実行）
+# Install git hooks (runs make test before every push)
 make setup-hooks
 ```
 
-## 制約事項
+## Limitations
 
-- **Block モードの初回スルー**: cgroup/connect4 による遮断はリアクティブな仕組みのため、新たに拒否対象となった IP への最初の接続は通過します。次のマイルストーンでデフォルト拒否モデル（allowlist 反転）に移行して解消予定です。
-- **IPv4 のみ対応**: 現時点では IPv6 接続は監視・遮断対象外です。
-- **DNS スニッフィング**: DNS パケットをキャプチャするため `CAP_NET_RAW` が必要です。Block モードでは DNS ウォッチャーが起動できない場合はエラー終了します（fail-closed）。
+- **Block mode first-connection slip-through**: enforcement is reactive. The first outbound connection to a newly-denied IP passes through before the BPF map is updated. A future milestone will flip to a default-deny allowlist model to close this gap.
+- **IPv4 only**: IPv6 connections are not yet monitored or blocked.
+- **DNS sniffing requires `CAP_NET_RAW`**: In block mode, failure to start the DNS watcher is fatal (fail-closed). In audit mode it is best-effort.
 
-## アーキテクチャ
+## Architecture
 
 ```
                      Linux kernel
 ┌─────────────────────────────────────────────┐
 │  tracepoint/sys_enter_connect               │
-│    → connect イベントを ring buffer へ      │
+│    → pushes connect events to ring buffer   │
 │                                             │
 │  socket_filter (port 53)                    │
-│    → DNS 応答を ring buffer へ              │
+│    → pushes DNS responses to ring buffer    │
 │                                             │
-│  cgroup/connect4  (Block モードのみ)         │
-│    → blocked_ips マップを参照し 0=拒否/1=許可 │
+│  cgroup/connect4  (block mode only)         │
+│    → consults blocked_ips map; 0=deny/1=allow│
 └─────────────────────────────────────────────┘
                      ↕ cilium/ebpf
 ┌─────────────────────────────────────────────┐
 │  field-cage agent (Go)                      │
-│    DNS Cache   : IP → ドメイン名            │
-│    Policy Engine: YAML allowlist 評価       │
-│    Reporter    : stdout へ verdict 出力     │
+│    DNS Cache    : IP → domain name          │
+│    Policy Engine: evaluates YAML allowlist  │
+│    Reporter     : writes verdict to stdout  │
 └─────────────────────────────────────────────┘
 ```
 
-## 技術スタック
+## Tech stack
 
-| レイヤー | 技術 |
-|----------|------|
-| エージェント | Go 1.22 |
-| eBPF プログラム | C（`bpf2go` でコンパイル） |
-| eBPF Go バインディング | `cilium/ebpf v0.14.0` |
-| ポリシー設定 | YAML（`gopkg.in/yaml.v3`） |
-| ビルド | `CGO_ENABLED=0` 完全静的バイナリ |
+| Layer | Technology |
+|-------|-----------|
+| Agent | Go 1.22 |
+| eBPF programs | C, compiled via `bpf2go` |
+| eBPF Go bindings | `cilium/ebpf v0.14.0` |
+| Policy config | YAML (`gopkg.in/yaml.v3`) |
+| Build | `CGO_ENABLED=0` fully-static binary |
