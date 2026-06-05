@@ -24,9 +24,10 @@ type Config struct {
 }
 
 // Engine evaluates outbound connections against a policy.
+// Domain matching is exact (case-insensitive). Wildcards are not supported.
 type Engine struct {
 	mode      Mode
-	domains   []string // wildcard-aware domain patterns
+	domains   map[string]struct{}
 	allowedIP map[string]struct{}
 }
 
@@ -52,6 +53,7 @@ func newEngine(cfg Config) (*Engine, error) {
 
 	e := &Engine{
 		mode:      cfg.Mode,
+		domains:   make(map[string]struct{}),
 		allowedIP: make(map[string]struct{}),
 	}
 	for _, entry := range cfg.Allowlist {
@@ -59,7 +61,7 @@ func newEngine(cfg Config) (*Engine, error) {
 		if ip := net.ParseIP(entry); ip != nil {
 			e.allowedIP[ip.String()] = struct{}{} // canonicalize to prevent representation mismatches
 		} else {
-			e.domains = append(e.domains, entry)
+			e.domains[strings.ToLower(entry)] = struct{}{}
 		}
 	}
 	return e, nil
@@ -69,6 +71,7 @@ func newEngine(cfg Config) (*Engine, error) {
 func (e *Engine) Mode() Mode { return e.mode }
 
 // Allow reports whether the given domain and IP are permitted by the policy.
+// Domain matching is exact and case-insensitive; wildcards are not supported.
 // domain may be empty if DNS resolution has not occurred yet; in that case
 // only the IP is checked.
 func (e *Engine) Allow(domain string, ip net.IP) bool {
@@ -78,29 +81,9 @@ func (e *Engine) Allow(domain string, ip net.IP) bool {
 		}
 	}
 	if domain != "" {
-		for _, pattern := range e.domains {
-			if matchDomain(pattern, domain) {
-				return true
-			}
+		if _, ok := e.domains[strings.ToLower(domain)]; ok {
+			return true
 		}
 	}
 	return false
-}
-
-// matchDomain reports whether domain matches pattern.
-// A leading "*." wildcard matches exactly one subdomain label.
-// Example: "*.github.com" matches "api.github.com" but not "github.com"
-// and not "sub.api.github.com".
-func matchDomain(pattern, domain string) bool {
-	if !strings.HasPrefix(pattern, "*.") {
-		return strings.EqualFold(pattern, domain)
-	}
-	base := strings.ToLower(pattern[2:]) // "github.com"
-	d := strings.ToLower(domain)
-	suffix := "." + base
-	if !strings.HasSuffix(d, suffix) {
-		return false
-	}
-	label := d[:len(d)-len(suffix)]
-	return len(label) > 0 && !strings.Contains(label, ".")
 }

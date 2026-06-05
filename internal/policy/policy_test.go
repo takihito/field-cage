@@ -7,33 +7,10 @@ import (
 	"testing"
 )
 
-func TestMatchDomain(t *testing.T) {
-	cases := []struct {
-		pattern string
-		domain  string
-		want    bool
-	}{
-		{"github.com", "github.com", true},
-		{"github.com", "api.github.com", false},
-		{"*.github.com", "api.github.com", true},
-		{"*.github.com", "github.com", false},
-		{"*.github.com", "sub.api.github.com", false},
-		{"*.npmjs.org", "registry.npmjs.org", true},
-		{"*.npmjs.org", "npmjs.org", false},
-		{"example.com", "EXAMPLE.COM", true},
-	}
-	for _, tc := range cases {
-		got := matchDomain(tc.pattern, tc.domain)
-		if got != tc.want {
-			t.Errorf("matchDomain(%q, %q) = %v, want %v", tc.pattern, tc.domain, got, tc.want)
-		}
-	}
-}
-
-func TestEngineAllow(t *testing.T) {
+func TestEngineAllowDomain(t *testing.T) {
 	cfg := Config{
 		Mode:      ModeAudit,
-		Allowlist: []string{"github.com", "*.npmjs.org", "1.2.3.4"},
+		Allowlist: []string{"github.com", "api.github.com", "registry.npmjs.org", "1.2.3.4"},
 	}
 	e, err := newEngine(cfg)
 	if err != nil {
@@ -45,13 +22,20 @@ func TestEngineAllow(t *testing.T) {
 		ip     string
 		want   bool
 	}{
+		// exact domain matches
 		{"github.com", "140.82.121.4", true},
-		{"api.github.com", "140.82.121.5", false},
+		{"api.github.com", "140.82.121.5", true},
 		{"registry.npmjs.org", "104.16.1.1", true},
-		{"npmjs.org", "104.16.1.2", false},
-		{"evil.com", "1.2.3.4", true}, // IP explicitly allowed
+		// subdomains are NOT matched (no wildcard support)
+		{"sub.github.com", "140.82.121.6", false},
+		{"other.npmjs.org", "104.16.1.2", false},
+		// IP explicitly allowed regardless of domain
+		{"evil.com", "1.2.3.4", true},
 		{"evil.com", "9.9.9.9", false},
-		{"", "1.2.3.4", true}, // no domain, IP allowed
+		// case-insensitive domain match
+		{"GITHUB.COM", "140.82.121.4", true},
+		// no domain, IP only
+		{"", "1.2.3.4", true},
 		{"", "9.9.9.9", false},
 	}
 	for _, tc := range cases {
@@ -68,7 +52,7 @@ func TestLoadFile(t *testing.T) {
 mode: block
 allowlist:
   - github.com
-  - "*.actions.githubusercontent.com"
+  - codeload.github.com
 `
 	f := filepath.Join(t.TempDir(), "policy.yml")
 	if err := os.WriteFile(f, []byte(yaml), 0o600); err != nil {
@@ -85,11 +69,29 @@ allowlist:
 	if !e.Allow("github.com", net.ParseIP("140.82.121.4")) {
 		t.Error("expected github.com to be allowed")
 	}
-	if !e.Allow("codeload.actions.githubusercontent.com", net.ParseIP("185.199.108.1")) {
-		t.Error("expected *.actions.githubusercontent.com to be allowed")
+	if !e.Allow("codeload.github.com", net.ParseIP("185.199.108.1")) {
+		t.Error("expected codeload.github.com to be allowed")
+	}
+	// wildcard-style entries are treated as literal domain names and won't match
+	if e.Allow("api.github.com", net.ParseIP("140.82.121.5")) {
+		t.Error("expected api.github.com to be denied (not in allowlist)")
 	}
 	if e.Allow("evil.com", net.ParseIP("1.2.3.4")) {
 		t.Error("expected evil.com to be denied")
+	}
+}
+
+func TestIPCanonicalization(t *testing.T) {
+	cfg := Config{
+		Mode:      ModeAudit,
+		Allowlist: []string{"  1.2.3.4  "}, // leading/trailing whitespace
+	}
+	e, err := newEngine(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !e.Allow("", net.ParseIP("1.2.3.4")) {
+		t.Error("expected 1.2.3.4 to be allowed after whitespace trim")
 	}
 }
 
