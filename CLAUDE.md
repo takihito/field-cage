@@ -36,7 +36,7 @@ Key goals:
 ### Go agent
 - **eBPF Loader** — loads compiled eBPF programs into the kernel using `cilium/ebpf`
 - **DNS Cache** — in-memory map resolving IP addresses to domain names from eBPF events
-- **Policy Engine** — matches live traffic against YAML allowlist (supports wildcards like `*.npmjs.org`)
+- **Policy Engine** — matches live traffic against YAML allowlist (exact domain match only, case-insensitive)
 - **Reporter** — writes structured logs to stdout (GitHub Actions format) or a file
 
 ### GitHub Action
