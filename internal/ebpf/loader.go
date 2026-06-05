@@ -89,8 +89,27 @@ func newWatcher(cgroupPath string) (*Watcher, error) {
 	cache := newDNSCache()
 	dw, err := newDNSWatcher(cache)
 	if err != nil {
-		// DNS capture is best-effort; connections are still logged without domain names.
-		log.Printf("field-cage: DNS capture unavailable (connections will show IPs only): %v", err)
+		if withBlock {
+			// In block mode the policy engine relies on domain names resolved from
+			// DNS responses. Without DNS capture every connection has an empty
+			// domain and only explicitly listed IPs can be matched, so all
+			// domain-based allowlist entries become ineffective and virtually all
+			// outbound traffic would be denied. Fail loudly rather than silently
+			// mis-enforcing policy.
+			reader.Close()  //nolint:errcheck
+			tp.Close()      //nolint:errcheck
+			objs.Close()
+			return nil, fmt.Errorf(
+				"DNS capture is required in block mode but could not start: %w\n"+
+					"  Possible causes:\n"+
+					"    - missing CAP_NET_RAW capability (run with sudo or grant the capability)\n"+
+					"    - AF_PACKET socket creation denied by seccomp/AppArmor\n"+
+					"  Without DNS capture every connection would show an empty domain and\n"+
+					"  domain-based allowlist entries would never match, blocking all traffic.", err)
+		}
+		// In audit mode DNS capture is best-effort: connections are still logged
+		// with their IP addresses and the agent continues running.
+		log.Printf("field-cage: DNS capture unavailable (audit mode, connections will show IPs only): %v", err)
 		dw = nil
 	}
 
