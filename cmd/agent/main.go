@@ -69,6 +69,11 @@ func main() {
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 
+	// blockedIPs accumulates all IPs that have been denied so far.
+	// UpdateBlockList expects the full set; passing a singleton would
+	// remove previously blocked IPs from the eBPF map.
+	blockedIPs := make(map[string]net.IP)
+
 	readErr := make(chan error, 1)
 	go func() {
 		for {
@@ -87,10 +92,17 @@ func main() {
 			if engine != nil && !engine.Allow(ev.Domain, net.IP(ev.DAddr)) {
 				verdict = "DENY"
 				if effectiveMode == policy.ModeBlock {
-					// cgroup/connect4 already blocked the connection in the kernel.
-					// Update the map so future connections to this IP are blocked immediately.
-					if err := watcher.UpdateBlockList([]net.IP{ev.DAddr}); err != nil {
-						log.Printf("field-cage: update block list: %v", err)
+					// Accumulate and sync the full blocked set so that adding a
+					// new IP does not inadvertently unblock previously denied IPs.
+					if _, seen := blockedIPs[ev.DAddr.String()]; !seen {
+						blockedIPs[ev.DAddr.String()] = ev.DAddr
+						all := make([]net.IP, 0, len(blockedIPs))
+						for _, ip := range blockedIPs {
+							all = append(all, ip)
+						}
+						if err := watcher.UpdateBlockList(all); err != nil {
+							log.Printf("field-cage: update block list: %v", err)
+						}
 					}
 				}
 			}

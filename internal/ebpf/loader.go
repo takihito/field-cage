@@ -51,7 +51,7 @@ type Watcher struct {
 // NewWatcher loads the eBPF program and attaches it to the tracepoint.
 // The caller must call Close when done.
 func NewWatcher() (*Watcher, error) {
-	return newWatcher(false)
+	return newWatcher("")
 }
 
 // NewBlockWatcher is like NewWatcher but also loads the cgroup/connect4
@@ -59,10 +59,11 @@ func NewWatcher() (*Watcher, error) {
 // cgroupPath is the path to a writable cgroup v2 directory
 // (e.g. "/sys/fs/cgroup").
 func NewBlockWatcher(cgroupPath string) (*Watcher, error) {
-	return newWatcher(true)
+	return newWatcher(cgroupPath)
 }
 
-func newWatcher(withBlock bool) (*Watcher, error) {
+func newWatcher(cgroupPath string) (*Watcher, error) {
+	withBlock := cgroupPath != ""
 	if err := rlimit.RemoveMemlock(); err != nil {
 		return nil, fmt.Errorf("remove memlock rlimit: %w", err)
 	}
@@ -96,7 +97,7 @@ func newWatcher(withBlock bool) (*Watcher, error) {
 	w := &Watcher{objs: objs, tp: tp, reader: reader, dnsCache: cache, dnsWatcher: dw}
 
 	if withBlock {
-		if err := w.attachBlock(); err != nil {
+		if err := w.attachBlock(cgroupPath); err != nil {
 			w.Close() //nolint:errcheck
 			return nil, fmt.Errorf("attach block program: %w", err)
 		}
@@ -105,14 +106,13 @@ func newWatcher(withBlock bool) (*Watcher, error) {
 }
 
 // attachBlock loads the cgroup/connect4 eBPF program and attaches it to the
-// root cgroup so it can block unauthorized connections system-wide.
-func (w *Watcher) attachBlock() error {
+// given cgroup path so it can block unauthorized connections system-wide.
+func (w *Watcher) attachBlock(cgroupPath string) error {
 	var blockObjs BlockObjects
 	if err := LoadBlockObjects(&blockObjs, nil); err != nil {
 		return fmt.Errorf("load block eBPF objects: %w", err)
 	}
 
-	cgroupPath := "/sys/fs/cgroup"
 	cg, err := link.AttachCgroup(link.CgroupOptions{
 		Path:    cgroupPath,
 		Attach:  ciliumebpf.AttachCGroupInet4Connect,
