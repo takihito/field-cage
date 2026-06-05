@@ -147,9 +147,31 @@ func (w *Watcher) attachBlock(cgroupPath string) error {
 	return nil
 }
 
+// AddBlockedIP adds a single IPv4 address to the blocked_ips eBPF map.
+// This is an O(1) incremental operation; use it instead of UpdateBlockList
+// when only one new IP needs to be blocked to avoid O(n) map iteration.
+// No-op for non-IPv4 addresses or if not in block mode.
+func (w *Watcher) AddBlockedIP(ip net.IP) error {
+	if w.blockObjs == nil {
+		return nil
+	}
+	ip4 := ip.To4()
+	if ip4 == nil {
+		return nil
+	}
+	var key [4]byte
+	copy(key[:], ip4)
+	var val uint8 = 1
+	if err := w.blockObjs.BlockedIps.Put(key, val); err != nil {
+		return fmt.Errorf("add blocked IP %s: %w", ip, err)
+	}
+	return nil
+}
+
 // UpdateBlockList replaces the set of blocked IPv4 addresses in the eBPF map.
 // ips is the full set of IPs that should be blocked; any previously blocked
-// IPs not in the new list are removed.
+// IPs not in the new list are removed. Prefer AddBlockedIP for incremental
+// updates to avoid O(n) map iteration on every new denial.
 // No-op if the watcher was not created with NewBlockWatcher.
 func (w *Watcher) UpdateBlockList(ips []net.IP) error {
 	if w.blockObjs == nil {

@@ -55,8 +55,9 @@ func newEngine(cfg Config) (*Engine, error) {
 		allowedIP: make(map[string]struct{}),
 	}
 	for _, entry := range cfg.Allowlist {
-		if net.ParseIP(entry) != nil {
-			e.allowedIP[entry] = struct{}{}
+		entry = strings.TrimSpace(entry)
+		if ip := net.ParseIP(entry); ip != nil {
+			e.allowedIP[ip.String()] = struct{}{} // canonicalize to prevent representation mismatches
 		} else {
 			e.domains = append(e.domains, entry)
 		}

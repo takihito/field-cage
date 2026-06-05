@@ -1,11 +1,12 @@
 // eBPF cgroup/connect4 program for field-cage enforcement mode.
 // Checks the destination IPv4 address against a blocked_ips map and
-// returns 0 (EPERM) to reject unauthorized connections.
+// returns 0 to instruct the kernel to reject the connection with EPERM.
 #include <linux/bpf.h>
 #include <bpf/bpf_helpers.h>
 
 // blocked_ips: IPv4 addresses (network byte order) that must be rejected.
-// Populated from Go userspace based on the YAML policy allowlist.
+// Populated incrementally from Go userspace as policy violations are observed.
+// Keys are raw __u32 IPv4 addresses; value 1 means blocked.
 struct {
 	__uint(type, BPF_MAP_TYPE_HASH);
 	__uint(max_entries, 4096);
@@ -19,7 +20,8 @@ int block_connect(struct bpf_sock_addr *ctx)
 	__u32 daddr = ctx->user_ip4;
 	__u8 *blocked = bpf_map_lookup_elem(&blocked_ips, &daddr);
 	if (blocked)
-		return 0; // block: kernel returns EPERM to the caller
+		return 0; // deny: cgroup/connect4 returning 0 causes the kernel to fail
+		          // the connect() syscall with EPERM
 	return 1;     // allow
 }
 
