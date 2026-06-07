@@ -27,7 +27,7 @@ verdict=DENY(no-domain)      pid=1236   tgid=1236   comm=curl             dst=93
 |---------|------|
 | `ALLOW` | ポリシーで許可された接続 |
 | `DENY(not-in-policy)` | ドメインが allowlist に含まれない |
-| `DENY(no-domain)` | DNS 未解決（IP のみ判明） |
+| `DENY(no-domain)` | ドメイン不明（IP 直指定、または DNS 応答未観測） |
 
 ## ポリシーファイル
 
@@ -86,6 +86,7 @@ make setup-hooks
 
 ## 制約事項
 
+- **TODO (Milestone 4) — Block モードの初回スルー**: 遮断はリアクティブな仕組みです。新たに拒否対象となった IP への最初の接続は、BPF マップが更新される前に通過します。次のマイルストーンでデフォルト拒否モデル（allowlist 反転）に移行して解消予定です。
 - **IPv4 のみ対応**: 現時点では IPv6 接続は監視・遮断対象外です。
 - **DNS パケット監視に `CAP_NET_RAW` が必要**: Block モードでは DNS パケット監視が起動できない場合はエラー終了します（fail-closed）。Audit モードではベストエフォートで動作します。
 

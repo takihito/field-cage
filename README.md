@@ -26,7 +26,7 @@ verdict=DENY(no-domain)      pid=1236   tgid=1236   comm=curl             dst=93
 |---------|---------|
 | `ALLOW` | connection permitted by policy |
 | `DENY(not-in-policy)` | domain resolved but not in the allowlist |
-| `DENY(no-domain)` | IP-only connection; DNS not yet resolved |
+| `DENY(no-domain)` | domain unknown (IP direct, or DNS response not yet observed) |
 
 ## Policy file
 
@@ -85,6 +85,7 @@ make setup-hooks
 
 ## Limitations
 
+- **TODO (Milestone 4) — Block mode first-connection slip-through**: enforcement is reactive. The first outbound connection to a newly-denied IP passes through before the BPF map is updated. A future milestone will flip to a default-deny allowlist model to close this gap.
 - **IPv4 only**: IPv6 connections are not yet monitored or blocked.
 - **DNS packet monitoring requires `CAP_NET_RAW`**: In block mode, failure to start DNS packet monitoring is fatal (fail-closed). In audit mode it is best-effort.
 
