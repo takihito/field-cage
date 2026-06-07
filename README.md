@@ -4,15 +4,14 @@ A lightweight eBPF agent that monitors and restricts outbound network connection
 
 ## Overview
 
-field-cage hooks into the Linux kernel via eBPF to observe every outbound connection attempt in real time. It maps raw IP addresses to domain names through DNS sniffing, then evaluates each connection against a YAML allowlist.
+field-cage hooks into the Linux kernel via eBPF to observe every outbound connection attempt in real time. It maps raw IP addresses to domain names through DNS packet monitoring, then evaluates each connection against a YAML allowlist.
 
 - **Audit mode** — logs all connections without blocking. Safe to add to any existing workflow
 - **Block mode** — denies connections not listed in the policy (`EPERM` returned to the process)
 
 ## Features
 
-- Zero runtime dependencies. Single fully-static binary, no Node.js required
-- Automatic IP-to-domain mapping via DNS packet sniffing
+- Automatic IP-to-domain mapping via DNS packet monitoring
 - YAML policy: exact domain and IP matching (case-insensitive)
 
 ## Log output
@@ -86,9 +85,8 @@ make setup-hooks
 
 ## Limitations
 
-- **Block mode first-connection slip-through**: enforcement is reactive. The first outbound connection to a newly-denied IP passes through before the BPF map is updated. A future milestone will flip to a default-deny allowlist model to close this gap.
 - **IPv4 only**: IPv6 connections are not yet monitored or blocked.
-- **DNS sniffing requires `CAP_NET_RAW`**: In block mode, failure to start the DNS watcher is fatal (fail-closed). In audit mode it is best-effort.
+- **DNS packet monitoring requires `CAP_NET_RAW`**: In block mode, failure to start DNS packet monitoring is fatal (fail-closed). In audit mode it is best-effort.
 
 ## Architecture
 
