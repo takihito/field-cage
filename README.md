@@ -89,7 +89,7 @@ make setup-hooks
 Block mode is **default-deny**: the `cgroup/connect4` program rejects every outbound IPv4 connection unless its destination IP is on the allowlist. The allowlist is built by:
 
 1. **Startup seeding** — explicit IP entries are added directly, and each allowlisted domain is resolved (IPv4) and its addresses added.
-2. **Live DNS observation** — when a DNS response for an allowlisted domain is seen on the wire, its A-record IPs are added to the allowlist before the application connects.
+2. **Live DNS observation** — when a DNS response for an allowlisted domain is seen on the wire, its A-record IPs are added to the allowlist before the application connects. Only responses originating from a configured resolver (the `nameserver` entries in `/etc/resolv.conf`) or from loopback are trusted for this; responses from any other source are cached for logging but never extend the kernel allowlist, so a forged response with a spoofed source port 53 cannot poison it.
 
 DNS (destination port 53) and loopback (`127.0.0.0/8`) are always permitted so that name resolution and local services keep working. A policy file is required in block mode; without one the agent refuses to start rather than deny all traffic.
 
@@ -98,6 +98,7 @@ DNS (destination port 53) and loopback (`127.0.0.0/8`) are always permitted so t
 - **First-connection race (fail-closed)**: a connection to an allowlisted domain may be denied on the very first attempt if the application connects before the observed DNS response is applied to the map. This fails *closed* (the connection is denied, not leaked); the application's retry succeeds once the map is updated. Startup seeding avoids this for domains resolvable at launch.
 - **IPv4 only**: IPv6 connections (`connect6`) are not yet hooked, so they are **not enforced** in block mode. IPv6 enforcement is planned.
 - **DNS over port 53 is always allowed**: this is required for name resolution to function under default-deny. As a side effect, low-bandwidth exfiltration via DNS tunneling is not blocked (it is still visible in the DNS monitoring logs).
+- **Live allowlisting trusts resolver-sourced responses**: only DNS responses from a configured resolver or loopback extend the allowlist. Forging a trusted response requires binding source port 53 (`CAP_NET_BIND_SERVICE`) or a raw socket (`CAP_NET_RAW`) — capabilities a normal build step does not hold; an attacker who already has them can subvert enforcement by other means.
 - **DNS packet monitoring requires `CAP_NET_RAW`**: In block mode, failure to start DNS packet monitoring is fatal (fail-closed). In audit mode it is best-effort.
 
 ## Architecture

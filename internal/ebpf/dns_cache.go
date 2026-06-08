@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"syscall"
@@ -45,14 +46,17 @@ func (c *DNSCache) set(ip net.IP, domain string) {
 // reads DNS response payloads from the ring buffer, and populates a DNSCache.
 // In block mode, isAllowed and allow are set so that A records resolved for
 // allowlisted domains are proactively added to the enforcement allowlist;
-// both are nil in audit mode.
+// both are nil in audit mode. trustedResolvers holds the nameserver IPs that
+// responses must originate from before they are trusted for allowlisting
+// (loopback is always trusted); it is only consulted when allow is non-nil.
 type dnsWatcher struct {
-	objs      DnsObjects
-	fd        int
-	reader    *ringbuf.Reader
-	cache     *DNSCache
-	isAllowed func(domain string) bool
-	allow     func(ip net.IP) error
+	objs             DnsObjects
+	fd               int
+	reader           *ringbuf.Reader
+	cache            *DNSCache
+	isAllowed        func(domain string) bool
+	allow            func(ip net.IP) error
+	trustedResolvers map[string]struct{}
 }
 
 func newDNSWatcher(cache *DNSCache, isAllowed func(string) bool, allow func(net.IP) error) (*dnsWatcher, error) {
@@ -84,6 +88,19 @@ func newDNSWatcher(cache *DNSCache, isAllowed func(string) bool, allow func(net.
 	}
 
 	w := &dnsWatcher{objs: objs, fd: fd, reader: reader, cache: cache, isAllowed: isAllowed, allow: allow}
+
+	// Block mode only: determine which resolver source IPs are trusted for
+	// allowlisting. Responses from any other source (e.g. forged packets with a
+	// spoofed source port 53) are still cached for logging but never extend the
+	// kernel allowlist.
+	if allow != nil {
+		data, err := os.ReadFile("/etc/resolv.conf")
+		if err != nil {
+			log.Printf("field-cage: read /etc/resolv.conf failed; live DNS allowlisting limited to loopback responses: %v", err)
+		}
+		w.trustedResolvers = parseResolvConf(data)
+	}
+
 	go w.run()
 	return w, nil
 }
@@ -94,19 +111,29 @@ func (w *dnsWatcher) run() {
 		if err != nil {
 			return
 		}
-		if len(record.RawSample) < 4 {
+		// Wire layout (see struct dns_event in bpf/dns.c):
+		//   [0:4]  len (native endian)   [4:8]  source IPv4 (network order)
+		//   [8:8+len] DNS payload
+		if len(record.RawSample) < 8 {
 			continue
 		}
 		length := binary.NativeEndian.Uint32(record.RawSample[:4])
-		if length == 0 || int(length) > len(record.RawSample)-4 {
+		if length == 0 || int(length) > len(record.RawSample)-8 {
 			continue
 		}
-		payload := record.RawSample[4 : 4+length]
+		srcIP := make(net.IP, 4)
+		copy(srcIP, record.RawSample[4:8])
+		payload := record.RawSample[8 : 8+length]
 		domain, ips := parseDNSResponse(payload)
 		if domain == "" {
 			continue
 		}
-		allowDomain := w.isAllowed != nil && w.allow != nil && w.isAllowed(domain)
+		// Only extend the kernel allowlist from responses that (a) resolve an
+		// allowlisted domain and (b) originate from a trusted resolver. This
+		// prevents a forged DNS response (spoofed source port 53) from poisoning
+		// the allowlist and bypassing default-deny enforcement.
+		allowDomain := w.allow != nil && w.isAllowed != nil &&
+			w.isAllowed(domain) && isTrustedSourceIP(srcIP, w.trustedResolvers)
 		for _, ip := range ips {
 			w.cache.set(ip, domain)
 			// In block mode, proactively permit IPs for allowlisted domains so the
@@ -140,6 +167,49 @@ func htons(v uint16) uint16 {
 	var b [2]byte
 	binary.BigEndian.PutUint16(b[:], v)
 	return binary.NativeEndian.Uint16(b[:])
+}
+
+// parseResolvConf extracts the IPv4 nameserver addresses from /etc/resolv.conf
+// contents. These are the resolver source IPs trusted for live allowlisting.
+func parseResolvConf(data []byte) map[string]struct{} {
+	set := make(map[string]struct{})
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 || fields[0] != "nameserver" {
+			continue
+		}
+		if ip := net.ParseIP(fields[1]); ip != nil {
+			if ip4 := ip.To4(); ip4 != nil {
+				set[ip4.String()] = struct{}{}
+			}
+		}
+	}
+	return set
+}
+
+// isTrustedSourceIP reports whether a DNS response from the given source IP may
+// be trusted to extend the allowlist. Loopback is always trusted (stub
+// resolvers such as systemd-resolved answer from 127.0.0.0/8); otherwise the
+// source must be one of the configured nameservers. Binding source port 53 or
+// spoofing a source IP both require elevated capabilities, so this confines
+// allowlist extension to legitimate resolver traffic in the common case.
+func isTrustedSourceIP(ip net.IP, trusted map[string]struct{}) bool {
+	if ip == nil {
+		return false
+	}
+	if ip.IsLoopback() {
+		return true
+	}
+	ip4 := ip.To4()
+	if ip4 == nil {
+		return false
+	}
+	_, ok := trusted[ip4.String()]
+	return ok
 }
 
 // parseDNSResponse parses a raw DNS response and returns the queried domain
