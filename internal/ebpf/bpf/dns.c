@@ -11,6 +11,7 @@
 
 struct dns_event {
 	__u32 len;
+	__u32 saddr; // source IPv4 address (network byte order)
 	__u8  payload[DNS_MAX_LEN];
 };
 
@@ -70,6 +71,13 @@ int capture_dns(struct __sk_buff *skb)
 		return 0;
 
 	ev->len = dns_len;
+
+	/* Source IPv4 address (IP header offset 12) so userspace can verify the
+	 * response came from a trusted resolver before trusting it for allowlisting.
+	 * Stored in network byte order (raw wire bytes). */
+	ev->saddr = 0;
+	bpf_skb_load_bytes(skb, ETH_HLEN + 12, &ev->saddr, 4);
+
 	__u32 dns_offset = ETH_HLEN + ihl + 8;
 	if (bpf_skb_load_bytes(skb, dns_offset, ev->payload, dns_len) != 0) {
 		bpf_ringbuf_discard(ev, 0);

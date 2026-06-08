@@ -147,3 +147,52 @@ func TestReadDNSName_WithPointer(t *testing.T) {
 		t.Errorf("got %q, want %q", got, domain)
 	}
 }
+
+func TestParseResolvConf(t *testing.T) {
+	data := []byte(`# managed by something
+; a comment
+nameserver 127.0.0.53
+nameserver 8.8.8.8
+nameserver 2001:4860:4860::8888
+options edns0
+search example.com
+nameserver
+`)
+	got := parseResolvConf(data)
+	want := map[string]struct{}{"127.0.0.53": {}, "8.8.8.8": {}}
+	if len(got) != len(want) {
+		t.Fatalf("parseResolvConf returned %d entries, want %d: %v", len(got), len(want), got)
+	}
+	for ip := range want {
+		if _, ok := got[ip]; !ok {
+			t.Errorf("expected nameserver %s to be parsed", ip)
+		}
+	}
+	// IPv6 nameservers are ignored (IPv4-only enforcement).
+	if _, ok := got["2001:4860:4860::8888"]; ok {
+		t.Error("IPv6 nameserver should not be included")
+	}
+}
+
+func TestIsTrustedSourceIP(t *testing.T) {
+	trusted := map[string]struct{}{"8.8.8.8": {}}
+	cases := []struct {
+		ip   string
+		want bool
+	}{
+		{"8.8.8.8", true},      // configured nameserver
+		{"127.0.0.53", true},   // loopback (stub resolver) always trusted
+		{"127.0.0.1", true},    // loopback
+		{"1.2.3.4", false},     // arbitrary / forged source
+		{"9.9.9.9", false},     // not configured
+	}
+	for _, tc := range cases {
+		got := isTrustedSourceIP(net.ParseIP(tc.ip), trusted)
+		if got != tc.want {
+			t.Errorf("isTrustedSourceIP(%s) = %v, want %v", tc.ip, got, tc.want)
+		}
+	}
+	if isTrustedSourceIP(nil, trusted) {
+		t.Error("nil IP should not be trusted")
+	}
+}

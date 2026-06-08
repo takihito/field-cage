@@ -37,7 +37,8 @@ type connectEvent struct {
 
 // Watcher attaches to the sys_enter_connect tracepoint and streams Events.
 // It also runs a DNS cache that annotates events with resolved domain names.
-// When blockObjs is non-nil, UpdateBlockList can be used to enforce policy.
+// When blockObjs is non-nil, AllowIP populates the allowlist enforced by the
+// cgroup/connect4 program (default-deny).
 type Watcher struct {
 	objs       ConnectObjects
 	tp         link.Link
@@ -51,18 +52,21 @@ type Watcher struct {
 // NewWatcher loads the eBPF program and attaches it to the tracepoint.
 // The caller must call Close when done.
 func NewWatcher() (*Watcher, error) {
-	return newWatcher("")
+	return newWatcher("", nil)
 }
 
 // NewBlockWatcher is like NewWatcher but also loads the cgroup/connect4
-// enforcement program. Use UpdateBlockList to populate the blocked-IP set.
+// enforcement program, which denies every outbound connection by default
+// (allowlist model). Use AllowIP to seed the permitted-IP set; observed DNS
+// responses for domains accepted by isAllowedDomain are added automatically.
 // cgroupPath is the path to a writable cgroup v2 directory
-// (e.g. "/sys/fs/cgroup").
-func NewBlockWatcher(cgroupPath string) (*Watcher, error) {
-	return newWatcher(cgroupPath)
+// (e.g. "/sys/fs/cgroup"). isAllowedDomain reports whether a resolved domain is
+// on the allowlist; it may be nil, in which case only seeded IPs are permitted.
+func NewBlockWatcher(cgroupPath string, isAllowedDomain func(string) bool) (*Watcher, error) {
+	return newWatcher(cgroupPath, isAllowedDomain)
 }
 
-func newWatcher(cgroupPath string) (*Watcher, error) {
+func newWatcher(cgroupPath string, isAllowedDomain func(string) bool) (*Watcher, error) {
 	withBlock := cgroupPath != ""
 	if err := rlimit.RemoveMemlock(); err != nil {
 		return nil, fmt.Errorf("remove memlock rlimit: %w", err)
@@ -87,40 +91,46 @@ func newWatcher(cgroupPath string) (*Watcher, error) {
 	}
 
 	cache := newDNSCache()
-	dw, err := newDNSWatcher(cache)
-	if err != nil {
-		if withBlock {
-			// In block mode the policy engine relies on domain names resolved from
-			// DNS responses. Without DNS capture every connection has an empty
-			// domain and only explicitly listed IPs can be matched, so all
-			// domain-based allowlist entries become ineffective and virtually all
-			// outbound traffic would be denied. Fail loudly rather than silently
-			// mis-enforcing policy.
-			reader.Close()  //nolint:errcheck
-			tp.Close()      //nolint:errcheck
-			objs.Close()
-			return nil, fmt.Errorf(
-				"DNS capture is required in block mode but could not start: %w\n"+
-					"  Possible causes:\n"+
-					"    - missing CAP_NET_RAW capability (run with sudo or grant the capability)\n"+
-					"    - AF_PACKET socket creation denied by seccomp/AppArmor\n"+
-					"  Without DNS capture every connection would show an empty domain and\n"+
-					"  domain-based allowlist entries would never match, blocking all traffic.", err)
-		}
-		// In audit mode DNS capture is best-effort: connections are still logged
-		// with their IP addresses and the agent continues running.
-		log.Printf("field-cage: DNS capture unavailable (audit mode, connections will show IPs only): %v", err)
-		dw = nil
-	}
+	w := &Watcher{objs: objs, tp: tp, reader: reader, dnsCache: cache}
 
-	w := &Watcher{objs: objs, tp: tp, reader: reader, dnsCache: cache, dnsWatcher: dw}
-
+	// Attach the enforcement program before starting the DNS watcher so that
+	// AllowIP can populate the allowlist as soon as DNS responses arrive.
 	if withBlock {
 		if err := w.attachBlock(cgroupPath); err != nil {
 			w.Close() //nolint:errcheck
 			return nil, fmt.Errorf("attach block program: %w", err)
 		}
 	}
+
+	// In block mode, observed DNS responses for allowlisted domains are added to
+	// the enforcement map proactively (before the application connects).
+	var onAllowedIP func(net.IP) error
+	if withBlock {
+		onAllowedIP = w.AllowIP
+	}
+	dw, err := newDNSWatcher(cache, isAllowedDomain, onAllowedIP)
+	if err != nil {
+		if withBlock {
+			// In block mode the allowlist is keyed on domain names resolved from
+			// DNS responses. Without DNS capture only the IPs seeded at startup
+			// could ever be permitted, so any domain whose address rotates (CDNs,
+			// round-robin) would be denied. Fail loudly rather than silently
+			// mis-enforcing policy.
+			w.Close() //nolint:errcheck
+			return nil, fmt.Errorf(
+				"DNS capture is required in block mode but could not start: %w\n"+
+					"  Possible causes:\n"+
+					"    - missing CAP_NET_RAW capability (run with sudo or grant the capability)\n"+
+					"    - AF_PACKET socket creation denied by seccomp/AppArmor\n"+
+					"  Without DNS capture only IPs seeded at startup would be permitted and\n"+
+					"  domains whose addresses rotate would be denied.", err)
+		}
+		// In audit mode DNS capture is best-effort: connections are still logged
+		// with their IP addresses and the agent continues running.
+		log.Printf("field-cage: DNS capture unavailable (audit mode, connections will show IPs only): %v", err)
+		dw = nil
+	}
+	w.dnsWatcher = dw
 	return w, nil
 }
 
@@ -147,11 +157,11 @@ func (w *Watcher) attachBlock(cgroupPath string) error {
 	return nil
 }
 
-// AddBlockedIP adds a single IPv4 address to the blocked_ips eBPF map.
-// This is an O(1) incremental operation; use it instead of UpdateBlockList
-// when only one new IP needs to be blocked to avoid O(n) map iteration.
-// No-op for non-IPv4 addresses or if not in block mode.
-func (w *Watcher) AddBlockedIP(ip net.IP) error {
+// AllowIP adds a single IPv4 address to the allowed_ips eBPF map, permitting
+// outbound connections to it under the default-deny enforcement program.
+// This is an O(1) incremental operation. It is a no-op for non-IPv4 addresses
+// or if the watcher was not created with NewBlockWatcher.
+func (w *Watcher) AllowIP(ip net.IP) error {
 	if w.blockObjs == nil {
 		return nil
 	}
@@ -162,57 +172,8 @@ func (w *Watcher) AddBlockedIP(ip net.IP) error {
 	var key [4]byte
 	copy(key[:], ip4)
 	var val uint8 = 1
-	if err := w.blockObjs.BlockedIps.Put(key, val); err != nil {
-		return fmt.Errorf("add blocked IP %s: %w", ip, err)
-	}
-	return nil
-}
-
-// UpdateBlockList replaces the set of blocked IPv4 addresses in the eBPF map.
-// ips is the full set of IPs that should be blocked; any previously blocked
-// IPs not in the new list are removed. Prefer AddBlockedIP for incremental
-// updates to avoid O(n) map iteration on every new denial.
-// No-op if the watcher was not created with NewBlockWatcher.
-func (w *Watcher) UpdateBlockList(ips []net.IP) error {
-	if w.blockObjs == nil {
-		return nil
-	}
-
-	m := w.blockObjs.BlockedIps
-	var blocked uint8 = 1
-
-	// Add all IPs in the new list.
-	newSet := make(map[[4]byte]struct{}, len(ips))
-	for _, ip := range ips {
-		ip4 := ip.To4()
-		if ip4 == nil {
-			continue
-		}
-		var key [4]byte
-		copy(key[:], ip4)
-		newSet[key] = struct{}{}
-		if err := m.Put(key, blocked); err != nil {
-			return fmt.Errorf("update blocked_ips map: %w", err)
-		}
-	}
-
-	// Remove stale entries.
-	var key [4]byte
-	iter := m.Iterate()
-	var val uint8
-	var toDelete [][4]byte
-	for iter.Next(&key, &val) {
-		if _, ok := newSet[key]; !ok {
-			toDelete = append(toDelete, key)
-		}
-	}
-	if err := iter.Err(); err != nil {
-		return fmt.Errorf("iterate blocked_ips map: %w", err)
-	}
-	for _, k := range toDelete {
-		if err := m.Delete(k); err != nil {
-			return fmt.Errorf("delete blocked_ips entry: %w", err)
-		}
+	if err := w.blockObjs.AllowedIps.Put(key, val); err != nil {
+		return fmt.Errorf("add allowed IP %s: %w", ip, err)
 	}
 	return nil
 }

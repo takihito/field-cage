@@ -101,3 +101,58 @@ func TestInvalidMode(t *testing.T) {
 		t.Error("expected error for invalid mode")
 	}
 }
+
+func TestDomainsAndIPs(t *testing.T) {
+	cfg := Config{
+		Mode:      ModeBlock,
+		Allowlist: []string{"GitHub.com", "api.github.com", "1.2.3.4", "5.6.7.8"},
+	}
+	e, err := newEngine(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	domains := e.Domains()
+	wantDomains := map[string]bool{"github.com": true, "api.github.com": true}
+	if len(domains) != len(wantDomains) {
+		t.Errorf("Domains() returned %d entries, want %d: %v", len(domains), len(wantDomains), domains)
+	}
+	for _, d := range domains {
+		if !wantDomains[d] {
+			t.Errorf("unexpected domain %q (should be lowercased and IP-free)", d)
+		}
+	}
+
+	ips := e.IPs()
+	wantIPs := map[string]bool{"1.2.3.4": true, "5.6.7.8": true}
+	if len(ips) != len(wantIPs) {
+		t.Errorf("IPs() returned %d entries, want %d: %v", len(ips), len(wantIPs), ips)
+	}
+	for _, ip := range ips {
+		if !wantIPs[ip.String()] {
+			t.Errorf("unexpected IP %q", ip)
+		}
+	}
+}
+
+func TestIsAllowedDomain(t *testing.T) {
+	e, err := newEngine(Config{Mode: ModeBlock, Allowlist: []string{"github.com", "1.2.3.4"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		domain string
+		want   bool
+	}{
+		{"github.com", true},
+		{"GITHUB.COM", true}, // case-insensitive
+		{"api.github.com", false},
+		{"", false},
+		{"1.2.3.4", false}, // IP entries are not domains
+	}
+	for _, tc := range cases {
+		if got := e.IsAllowedDomain(tc.domain); got != tc.want {
+			t.Errorf("IsAllowedDomain(%q) = %v, want %v", tc.domain, got, tc.want)
+		}
+	}
+}
