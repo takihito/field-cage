@@ -55,7 +55,44 @@ sudo ./field-cage --config policy.yml
 # Block mode — default-deny; only allowlisted destinations are permitted.
 # A policy file is required (block mode without one would deny all traffic).
 sudo ./field-cage --config policy.yml --mode block
+
+# Print version
+./field-cage --version
 ```
+
+## GitHub Actions
+
+Use the composite action to run field-cage on a runner. It downloads the
+pinned release binary, verifies its SHA-256 checksum, and starts the agent in
+the background for the rest of the job.
+
+```yaml
+- uses: takihito/field-cage@v0.1.0
+  with:
+    version: v0.1.0                          # must match the `uses:` ref
+    config: .github/field-cage-policy.yml    # omit for audit mode with no policy
+    mode: audit                              # audit (log-only) or block
+```
+
+- **Audit mode is safe to add to any workflow** — it only logs outbound
+  connections and never blocks them.
+- The agent runs in the background; **view its log in a later step**, e.g.
+  `cat /tmp/field-cage.log` (path configurable via the `log-file` input), or
+  upload it as an artifact. Composite actions cannot run an automatic
+  post-job step, so log collection and shutdown are left to the caller.
+- See [`.github/field-cage-policy.example.yml`](.github/field-cage-policy.example.yml)
+  for a sample policy.
+
+### Releases
+
+Binaries (`linux/amd64`, `linux/arm64`) and a `checksums.txt` are published to
+GitHub Releases by [GoReleaser](https://goreleaser.com). Versioning is managed
+by [tagpr](https://github.com/Songmu/tagpr): merging the auto-maintained
+release PR pushes a `vX.Y.Z` tag, which triggers the release build.
+
+> Maintainer note: tagpr must push the tag with a PAT (repo scope) stored as the
+> `TAGPR_TOKEN` secret — a tag pushed by the default `GITHUB_TOKEN` would not
+> trigger the release workflow.
 
 ## Development
 

@@ -1,0 +1,54 @@
+# GoReleaser configuration for field-cage.
+# Docs: https://goreleaser.com
+#
+# The release build is NOT a plain `go build`: the eBPF C sources must first be
+# compiled into Go bindings via `go generate` (requires clang/llvm/libbpf and the
+# /usr/include/asm symlink, set up by the release workflow). The generated
+# *_bpfel.go / *_bpfeb.go files embed portable BPF bytecode, so a single generate
+# step supports cross-compiling the Go binary to both amd64 and arm64 (both
+# little-endian, so both use the _bpfel variant).
+version: 2
+
+project_name: field-cage
+
+before:
+  hooks:
+    - go generate ./internal/ebpf/...
+
+builds:
+  - id: field-cage
+    main: ./cmd/agent
+    binary: field-cage
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+archives:
+  # Distribute raw binaries (no tar) so the composite action can curl + verify
+  # them directly. Asset names: field-cage_linux_amd64, field-cage_linux_arm64.
+  - id: binary
+    formats:
+      - binary
+    name_template: "field-cage_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+release:
+  github:
+    owner: takihito
+    name: field-cage
+  draft: false
+  prerelease: auto
+
+changelog:
+  use: github

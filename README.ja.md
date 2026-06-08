@@ -56,7 +56,44 @@ sudo ./field-cage --config policy.yml
 # Block モード（デフォルト拒否。allowlist の宛先のみ許可）
 # ポリシーファイルは必須（無いと全接続が拒否されるため起動しません）
 sudo ./field-cage --config policy.yml --mode block
+
+# バージョン表示
+./field-cage --version
 ```
+
+## GitHub Actions での利用
+
+Composite Action でランナー上に field-cage を起動できます。指定バージョンの
+リリースバイナリを取得し、SHA-256 チェックサムを検証してから、ジョブの残りの
+期間バックグラウンドでエージェントを実行します。
+
+```yaml
+- uses: takihito/field-cage@v0.1.0
+  with:
+    version: v0.1.0                          # `uses:` のタグと一致させること
+    config: .github/field-cage-policy.yml    # 省略時はポリシー無しの audit
+    mode: audit                              # audit（ログのみ）または block
+```
+
+- **audit モードはどのワークフローにも安全に追加できます** — アウトバウンド接続を
+  記録するだけで遮断しません。
+- エージェントはバックグラウンドで動くため、**ログは後続ステップで確認**してください。
+  例: `cat /tmp/field-cage.log`（パスは `log-file` 入力で変更可）、または artifact として
+  アップロード。Composite Action は後処理（post）ステップを持てないため、ログ回収と停止は
+  呼び出し側で行います。
+- サンプルポリシーは
+  [`.github/field-cage-policy.example.yml`](.github/field-cage-policy.example.yml) を参照。
+
+### リリース
+
+バイナリ（`linux/amd64`・`linux/arm64`）と `checksums.txt` は
+[GoReleaser](https://goreleaser.com) により GitHub Releases へ公開されます。
+バージョン管理は [tagpr](https://github.com/Songmu/tagpr) が担い、自動メンテされる
+リリースPRをマージすると `vX.Y.Z` タグが push され、リリースビルドが起動します。
+
+> メンテナ向け注記: tagpr は PAT（repo スコープ、secret `TAGPR_TOKEN`）でタグを push する
+> 必要があります。デフォルトの `GITHUB_TOKEN` で push したタグはリリースワークフローを
+> 発火させないためです。
 
 ## 開発
 
