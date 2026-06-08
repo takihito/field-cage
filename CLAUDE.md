@@ -31,7 +31,7 @@ Key goals:
 ### eBPF component (C)
 - `tracepoint/syscalls/sys_enter_connect` — hooks outbound connection attempts (portable across kernel versions and architectures; prefer over `kprobe/sys_connect` which is symbol-name-dependent)
 - `socket_filter` on port 53 — sniffs DNS packets to build IP→domain mapping
-- `bpf_override_return` — in Block mode, returns an error to reject unauthorized connections
+- `cgroup/connect4` — in Block mode, enforces a default-deny allowlist: returns `0` (which makes the kernel fail the `connect()` with `EPERM`) for any destination not in the `allowed_ips` map. DNS (port 53) and loopback are always permitted. (An earlier design considered `bpf_override_return` on the connect tracepoint; `cgroup/connect4` was chosen instead because it enforces synchronously before the connection is made, closing the first-connection gap.)
 
 ### Go agent
 - **eBPF Loader** — loads compiled eBPF programs into the kernel using `cilium/ebpf`
