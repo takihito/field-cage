@@ -7,12 +7,44 @@ import (
 	"errors"
 	"net"
 	"os"
+	"path/filepath"
+	"strconv"
 	"syscall"
 	"testing"
 	"time"
 
 	"github.com/takihito/field-cage/internal/ebpf"
 )
+
+// setupTestCgroup creates a dedicated child cgroup, moves the current process
+// into it, and returns its path. This confines default-deny enforcement to the
+// test process so the integration test does not disrupt unrelated processes or
+// networking in a shared CI/container environment. The process is moved back to
+// the root cgroup and the child removed on cleanup. The test is skipped if a
+// writable cgroup v2 hierarchy is unavailable (e.g. insufficient privileges).
+func setupTestCgroup(t *testing.T) string {
+	t.Helper()
+	const root = "/sys/fs/cgroup"
+	dir := filepath.Join(root, "field-cage-test")
+	if err := os.Mkdir(dir, 0o755); err != nil && !errors.Is(err, os.ErrExist) {
+		t.Skipf("skipping: cannot create test cgroup (needs cgroup v2 + privileges): %v", err)
+	}
+	pid := strconv.Itoa(os.Getpid())
+	if err := os.WriteFile(filepath.Join(dir, "cgroup.procs"), []byte(pid), 0); err != nil {
+		os.Remove(dir) //nolint:errcheck
+		t.Skipf("skipping: cannot move process into test cgroup: %v", err)
+	}
+	t.Cleanup(func() {
+		// Move the process back to the root cgroup so the child can be removed.
+		if err := os.WriteFile(filepath.Join(root, "cgroup.procs"), []byte(pid), 0); err != nil {
+			t.Logf("warning: failed to move process back to root cgroup: %v", err)
+		}
+		if err := os.Remove(dir); err != nil {
+			t.Logf("warning: failed to remove test cgroup %s: %v", dir, err)
+		}
+	})
+	return dir
+}
 
 // TestWatcherCapturesIPv4Connect verifies that the eBPF tracepoint captures
 // an outbound IPv4 TCP connection made by the test process itself.
@@ -83,11 +115,12 @@ func TestWatcherCapturesIPv4Connect(t *testing.T) {
 // a non-loopback, non-allowlisted destination is rejected with EPERM, loopback
 // is always permitted, and AllowIP lifts the denial for a specific IP.
 // Requires CAP_BPF + CAP_NET_RAW and a writable cgroup v2 (run with sudo/root,
-// e.g. a privileged container). Attaches to the root cgroup, so it affects all
-// processes in the cgroup for the duration of the test.
+// e.g. a privileged container). Enforcement is confined to a dedicated child
+// cgroup holding only the test process, so it does not disrupt other processes.
 func TestBlockWatcherDefaultDeny(t *testing.T) {
+	cgroupPath := setupTestCgroup(t)
 	denyAll := func(string) bool { return false }
-	w, err := ebpf.NewBlockWatcher("/sys/fs/cgroup", denyAll)
+	w, err := ebpf.NewBlockWatcher(cgroupPath, denyAll)
 	if err != nil {
 		if errors.Is(err, os.ErrPermission) {
 			t.Skipf("skipping: insufficient privileges (needs CAP_BPF/CAP_NET_RAW/root): %v", err)

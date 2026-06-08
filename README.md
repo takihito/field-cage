@@ -99,6 +99,7 @@ DNS (destination port 53) and loopback (`127.0.0.0/8`) are always permitted so t
 - **IPv4 only**: IPv6 connections (`connect6`) are not yet hooked, so they are **not enforced** in block mode. IPv6 enforcement is planned.
 - **DNS over port 53 is always allowed**: this is required for name resolution to function under default-deny. As a side effect, low-bandwidth exfiltration via DNS tunneling is not blocked (it is still visible in the DNS monitoring logs).
 - **Live allowlisting trusts resolver-sourced responses**: only DNS responses from a configured resolver or loopback extend the allowlist. Forging a trusted response requires binding source port 53 (`CAP_NET_BIND_SERVICE`) or a raw socket (`CAP_NET_RAW`) — capabilities a normal build step does not hold; an attacker who already has them can subvert enforcement by other means.
+- **Live allowlisting only observes plaintext IPv4 UDP DNS (port 53)**: DNS carried over IPv6 transport, TCP, or encrypted (DoH/DoT) is not observed, so it cannot extend the allowlist. Domains resolved that way are only covered by startup seeding; if their addresses rotate afterwards, block mode will deny the new IPs (fail-closed). Keep such domains pinned by IP in the policy, or ensure they resolve via plaintext IPv4 UDP.
 - **DNS packet monitoring requires `CAP_NET_RAW`**: In block mode, failure to start DNS packet monitoring is fatal (fail-closed). In audit mode it is best-effort.
 
 ## Architecture

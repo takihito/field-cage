@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -8,10 +9,15 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/takihito/field-cage/internal/ebpf"
 	"github.com/takihito/field-cage/internal/policy"
 )
+
+// seedLookupTimeout bounds each startup DNS resolution so that a hung or
+// misconfigured resolver cannot stall block-mode startup indefinitely.
+const seedLookupTimeout = 5 * time.Second
 
 var (
 	configPath = flag.String("config", "", "path to YAML policy file (omit to allow all)")
@@ -144,16 +150,19 @@ func seedAllowlist(w *ebpf.Watcher, engine *policy.Engine) {
 			log.Printf("field-cage: seed allowed IP %s: %v", ip, err)
 		}
 	}
+	var resolver net.Resolver
 	for _, domain := range engine.Domains() {
-		ips, err := net.LookupIP(domain)
+		// "ip4" restricts results to IPv4; IPv6 enforcement is not yet
+		// implemented. Each lookup is bounded by seedLookupTimeout so a slow or
+		// unreachable resolver cannot block startup indefinitely.
+		ctx, cancel := context.WithTimeout(context.Background(), seedLookupTimeout)
+		ips, err := resolver.LookupIP(ctx, "ip4", domain)
+		cancel()
 		if err != nil {
 			log.Printf("field-cage: seed: resolve %s failed (will rely on observed DNS): %v", domain, err)
 			continue
 		}
 		for _, ip := range ips {
-			if ip.To4() == nil {
-				continue // IPv4 only; IPv6 enforcement is not yet implemented
-			}
 			if err := w.AllowIP(ip); err != nil {
 				log.Printf("field-cage: seed allowed IP %s (%s): %v", ip, domain, err)
 			}
