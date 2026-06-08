@@ -70,6 +70,38 @@ func newEngine(cfg Config) (*Engine, error) {
 // Mode returns the configured enforcement mode.
 func (e *Engine) Mode() Mode { return e.mode }
 
+// Domains returns the allowlisted domain names (lowercased). Used to seed the
+// enforcement map at startup by resolving each domain to its IP addresses.
+func (e *Engine) Domains() []string {
+	domains := make([]string, 0, len(e.domains))
+	for d := range e.domains {
+		domains = append(domains, d)
+	}
+	return domains
+}
+
+// IPs returns the explicitly allowlisted IP addresses (canonicalized). Used to
+// seed the enforcement map at startup.
+func (e *Engine) IPs() []net.IP {
+	ips := make([]net.IP, 0, len(e.allowedIP))
+	for s := range e.allowedIP {
+		if ip := net.ParseIP(s); ip != nil {
+			ips = append(ips, ip)
+		}
+	}
+	return ips
+}
+
+// IsAllowedDomain reports whether the given domain is on the allowlist.
+// Matching is exact and case-insensitive; wildcards are not supported.
+func (e *Engine) IsAllowedDomain(domain string) bool {
+	if domain == "" {
+		return false
+	}
+	_, ok := e.domains[strings.ToLower(domain)]
+	return ok
+}
+
 // Allow reports whether the given domain and IP are permitted by the policy.
 // Domain matching is exact and case-insensitive; wildcards are not supported.
 // domain may be empty if DNS resolution has not occurred yet; in that case

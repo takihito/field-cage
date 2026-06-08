@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"strings"
 	"sync"
@@ -42,14 +43,19 @@ func (c *DNSCache) set(ip net.IP, domain string) {
 
 // dnsWatcher attaches an eBPF socket_filter to a raw AF_PACKET socket,
 // reads DNS response payloads from the ring buffer, and populates a DNSCache.
+// In block mode, isAllowed and allow are set so that A records resolved for
+// allowlisted domains are proactively added to the enforcement allowlist;
+// both are nil in audit mode.
 type dnsWatcher struct {
-	objs   DnsObjects
-	fd     int
-	reader *ringbuf.Reader
-	cache  *DNSCache
+	objs      DnsObjects
+	fd        int
+	reader    *ringbuf.Reader
+	cache     *DNSCache
+	isAllowed func(domain string) bool
+	allow     func(ip net.IP) error
 }
 
-func newDNSWatcher(cache *DNSCache) (*dnsWatcher, error) {
+func newDNSWatcher(cache *DNSCache, isAllowed func(string) bool, allow func(net.IP) error) (*dnsWatcher, error) {
 	var objs DnsObjects
 	if err := LoadDnsObjects(&objs, nil); err != nil {
 		return nil, fmt.Errorf("load DNS eBPF objects: %w", err)
@@ -77,7 +83,7 @@ func newDNSWatcher(cache *DNSCache) (*dnsWatcher, error) {
 		return nil, fmt.Errorf("open DNS ringbuf reader: %w", err)
 	}
 
-	w := &dnsWatcher{objs: objs, fd: fd, reader: reader, cache: cache}
+	w := &dnsWatcher{objs: objs, fd: fd, reader: reader, cache: cache, isAllowed: isAllowed, allow: allow}
 	go w.run()
 	return w, nil
 }
@@ -100,8 +106,19 @@ func (w *dnsWatcher) run() {
 		if domain == "" {
 			continue
 		}
+		allowDomain := w.isAllowed != nil && w.allow != nil && w.isAllowed(domain)
 		for _, ip := range ips {
 			w.cache.set(ip, domain)
+			// In block mode, proactively permit IPs for allowlisted domains so the
+			// application's subsequent connection is not denied. The DNS response
+			// is observed on the wire before the application connects, so this
+			// usually wins the race; if not, the first connection fails closed and
+			// the application's retry succeeds once the map is updated.
+			if allowDomain {
+				if err := w.allow(ip); err != nil {
+					log.Printf("field-cage: allow resolved IP %s for %s: %v", ip, domain, err)
+				}
+			}
 		}
 	}
 }

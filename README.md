@@ -7,7 +7,7 @@ A lightweight eBPF agent that monitors and restricts outbound network connection
 field-cage hooks into the Linux kernel via eBPF to observe every outbound connection attempt in real time. It maps raw IP addresses to domain names through DNS packet monitoring, then evaluates each connection against a YAML allowlist.
 
 - **Audit mode** — logs all connections without blocking. Safe to add to any existing workflow
-- **Block mode** — denies connections not listed in the policy (`EPERM` returned to the process)
+- **Block mode** — default-deny: every outbound connection whose destination is not on the allowlist is rejected (`EPERM` returned to the process). DNS (port 53) and loopback are always permitted
 
 ## Features
 
@@ -52,7 +52,8 @@ sudo ./field-cage
 # Audit mode with a policy file
 sudo ./field-cage --config policy.yml
 
-# Block mode — deny connections not in the allowlist
+# Block mode — default-deny; only allowlisted destinations are permitted.
+# A policy file is required (block mode without one would deny all traffic).
 sudo ./field-cage --config policy.yml --mode block
 ```
 
@@ -83,10 +84,20 @@ make test
 make setup-hooks
 ```
 
+## Block mode enforcement model
+
+Block mode is **default-deny**: the `cgroup/connect4` program rejects every outbound IPv4 connection unless its destination IP is on the allowlist. The allowlist is built by:
+
+1. **Startup seeding** — explicit IP entries are added directly, and each allowlisted domain is resolved (IPv4) and its addresses added.
+2. **Live DNS observation** — when a DNS response for an allowlisted domain is seen on the wire, its A-record IPs are added to the allowlist before the application connects.
+
+DNS (destination port 53) and loopback (`127.0.0.0/8`) are always permitted so that name resolution and local services keep working. A policy file is required in block mode; without one the agent refuses to start rather than deny all traffic.
+
 ## Limitations
 
-- **TODO (Milestone 4) — Block mode first-connection slip-through**: enforcement is reactive. The first outbound connection to a newly-denied IP passes through before the BPF map is updated. A future milestone will flip to a default-deny allowlist model to close this gap.
-- **IPv4 only**: IPv6 connections are not yet monitored or blocked.
+- **First-connection race (fail-closed)**: a connection to an allowlisted domain may be denied on the very first attempt if the application connects before the observed DNS response is applied to the map. This fails *closed* (the connection is denied, not leaked); the application's retry succeeds once the map is updated. Startup seeding avoids this for domains resolvable at launch.
+- **IPv4 only**: IPv6 connections (`connect6`) are not yet hooked, so they are **not enforced** in block mode. IPv6 enforcement is planned.
+- **DNS over port 53 is always allowed**: this is required for name resolution to function under default-deny. As a side effect, low-bandwidth exfiltration via DNS tunneling is not blocked (it is still visible in the DNS monitoring logs).
 - **DNS packet monitoring requires `CAP_NET_RAW`**: In block mode, failure to start DNS packet monitoring is fatal (fail-closed). In audit mode it is best-effort.
 
 ## Architecture
@@ -101,7 +112,8 @@ make setup-hooks
 │    → pushes DNS responses to ring buffer    │
 │                                             │
 │  cgroup/connect4  (block mode only)         │
-│    → consults blocked_ips map; 0=deny/1=allow│
+│    → default-deny; allows port 53, loopback,│
+│      and IPs in the allowed_ips map (1=allow)│
 └─────────────────────────────────────────────┘
                      ↕ cilium/ebpf
 ┌─────────────────────────────────────────────┐

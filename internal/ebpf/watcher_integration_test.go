@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net"
 	"os"
+	"syscall"
 	"testing"
 	"time"
 
@@ -75,5 +76,59 @@ func TestWatcherCapturesIPv4Connect(t *testing.T) {
 			t.Errorf("timeout: connect to %s was not captured by eBPF", targetAddr)
 			return
 		}
+	}
+}
+
+// TestBlockWatcherDefaultDeny verifies the cgroup/connect4 enforcement program:
+// a non-loopback, non-allowlisted destination is rejected with EPERM, loopback
+// is always permitted, and AllowIP lifts the denial for a specific IP.
+// Requires CAP_BPF + CAP_NET_RAW and a writable cgroup v2 (run with sudo/root,
+// e.g. a privileged container). Attaches to the root cgroup, so it affects all
+// processes in the cgroup for the duration of the test.
+func TestBlockWatcherDefaultDeny(t *testing.T) {
+	denyAll := func(string) bool { return false }
+	w, err := ebpf.NewBlockWatcher("/sys/fs/cgroup", denyAll)
+	if err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			t.Skipf("skipping: insufficient privileges (needs CAP_BPF/CAP_NET_RAW/root): %v", err)
+		}
+		t.Fatalf("NewBlockWatcher: %v", err)
+	}
+	defer w.Close()
+
+	// Loopback is always allowed: a connection to a local listener must succeed.
+	ln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+	conn, err := net.DialTimeout("tcp4", ln.Addr().String(), 3*time.Second)
+	if err != nil {
+		t.Fatalf("loopback connect should be allowed under block mode, got: %v", err)
+	}
+	conn.Close()
+
+	// TEST-NET-1 (RFC 5737): guaranteed non-routable and non-loopback.
+	const target = "192.0.2.1:80"
+
+	// Default-deny: the connect is rejected by the program and fails with EPERM
+	// immediately, rather than attempting the network and timing out.
+	_, err = net.DialTimeout("tcp4", target, 2*time.Second)
+	if err == nil {
+		t.Fatalf("expected connect to %s to be denied, but it succeeded", target)
+	}
+	if !errors.Is(err, syscall.EPERM) {
+		t.Fatalf("expected EPERM for denied connect to %s, got: %v", target, err)
+	}
+
+	// After allowing the IP, the connect is no longer rejected by policy; it
+	// proceeds to the network and fails with something other than EPERM (the
+	// address is unroutable, so a timeout is expected).
+	if err := w.AllowIP(net.ParseIP("192.0.2.1")); err != nil {
+		t.Fatalf("AllowIP: %v", err)
+	}
+	_, err = net.DialTimeout("tcp4", target, 2*time.Second)
+	if errors.Is(err, syscall.EPERM) {
+		t.Fatalf("after AllowIP, connect to %s should not be EPERM, got: %v", target, err)
 	}
 }
