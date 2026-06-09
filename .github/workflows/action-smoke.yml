@@ -1,0 +1,50 @@
+name: Action Smoke Test
+
+# Validates the composite action (action.yml) end-to-end against a PUBLISHED
+# release: download + checksum verify + start agent + capture real traffic.
+# Requires a release to exist first (see Bootstrap in the Milestone 4 plan), so
+# this is manual (workflow_dispatch). Run it after v0.1.0 is published.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Released field-cage tag to test (e.g. v0.1.0)"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  action-smoke:
+    name: Composite action E2E
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Run field-cage action (audit mode)
+        uses: ./
+        with:
+          version: ${{ inputs.version }}
+          config: .github/field-cage-policy.example.yml
+          mode: audit
+          log-file: /tmp/field-cage.log
+
+      - name: Generate outbound traffic
+        run: |
+          curl -4 -s https://github.com     -o /dev/null
+          curl -4 -s https://api.github.com -o /dev/null
+          sleep 1
+
+      - name: Show field-cage log
+        if: always()
+        run: |
+          echo "=== field-cage log ==="
+          cat /tmp/field-cage.log 2>/dev/null || echo "(log not found — agent may have failed to start)"
+          echo "======================"
+
+      - name: Verify connections were captured
+        run: |
+          if ! grep -q "dst=" /tmp/field-cage.log 2>/dev/null; then
+            echo "ERROR: no connection events captured via the action" >&2
+            exit 1
+          fi

@@ -1,0 +1,8 @@
+# tagpr configuration (https://github.com/Songmu/tagpr)
+[tagpr]
+    # Tags are prefixed with "v" (e.g. v0.1.0).
+    vPrefix = true
+    # The branch tagpr watches and tags from.
+    releaseBranch = main
+    # Maintain CHANGELOG.md from merged PRs.
+    changelog = true

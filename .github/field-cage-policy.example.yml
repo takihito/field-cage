@@ -1,0 +1,13 @@
+# Example field-cage policy.
+# Copy to your repo (e.g. .github/field-cage-policy.yml) and pass via the
+# action's `config` input. Domain matching is exact and case-insensitive;
+# wildcards are NOT supported — list each host explicitly.
+mode: audit # audit (log-only) or block (default-deny enforcement)
+
+allowlist:
+  - github.com
+  - api.github.com
+  - codeload.github.com
+  - objects.githubusercontent.com
+  - registry.npmjs.org
+  # - 140.82.121.4   # raw IPv4 addresses are also supported

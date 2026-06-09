@@ -19,13 +19,23 @@ import (
 // misconfigured resolver cannot stall block-mode startup indefinitely.
 const seedLookupTimeout = 5 * time.Second
 
+// version is the release version, injected at build time via
+// -ldflags "-X main.version=...". Defaults to "dev" for local builds.
+var version = "dev"
+
 var (
-	configPath = flag.String("config", "", "path to YAML policy file (omit to allow all)")
-	mode       = flag.String("mode", "", "enforcement mode: audit or block (overrides policy file)")
+	configPath  = flag.String("config", "", "path to YAML policy file (omit to allow all)")
+	mode        = flag.String("mode", "", "enforcement mode: audit or block (overrides policy file)")
+	showVersion = flag.Bool("version", false, "print version and exit")
 )
 
 func main() {
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("field-cage %s\n", version)
+		return
+	}
 
 	var engine *policy.Engine
 	if *configPath != "" {
@@ -83,7 +93,7 @@ func main() {
 	if engine == nil {
 		modeLabel = string(effectiveMode) + " (no policy)"
 	}
-	fmt.Fprintf(os.Stderr, "field-cage: watching outbound connections [mode=%s] (Ctrl+C to stop)\n", modeLabel)
+	fmt.Fprintf(os.Stderr, "field-cage %s: watching outbound connections [mode=%s] (Ctrl+C to stop)\n", version, modeLabel)
 	if effectiveMode == policy.ModeBlock {
 		// Enforcement is default-deny: the cgroup/connect4 program rejects any
 		// outbound connection whose destination IP is not on the allowlist.

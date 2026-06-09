@@ -1,0 +1,75 @@
+name: "field-cage"
+description: "eBPF-based outbound network monitor/restrictor for GitHub Actions runners (supply-chain defense)."
+branding:
+  icon: "shield"
+  color: "blue"
+
+inputs:
+  version:
+    description: "Release tag of field-cage to download (e.g. v0.1.0). Pin this to match the `uses:` ref."
+    required: true
+  config:
+    description: "Path to the YAML policy file. Omit for audit mode with no policy (log-only)."
+    required: false
+    default: ""
+  mode:
+    description: "Enforcement mode: audit or block. Overrides the mode in the policy file."
+    required: false
+    default: ""
+  log-file:
+    description: "Path the agent writes its log to."
+    required: false
+    default: "/tmp/field-cage.log"
+
+runs:
+  using: composite
+  steps:
+    - name: Download and verify field-cage
+      shell: bash
+      env:
+        FC_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        case "$(uname -m)" in
+          x86_64)  ARCH=amd64 ;;
+          aarch64) ARCH=arm64 ;;
+          *) echo "field-cage: unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+        esac
+        bin="field-cage_linux_${ARCH}"
+        base="https://github.com/takihito/field-cage/releases/download/${FC_VERSION}"
+        # Use RUNNER_TEMP (exec-safe on GitHub-hosted runners) when available;
+        # fall back to /tmp for local testing.
+        tmp="$(mktemp -d -p "${RUNNER_TEMP:-/tmp}")"
+        echo "field-cage: downloading ${bin} (${FC_VERSION})"
+        curl -fsSL "${base}/${bin}" -o "${tmp}/${bin}"
+        curl -fsSL "${base}/checksums.txt" -o "${tmp}/checksums.txt"
+        # Verify the downloaded binary against the published checksum.
+        ( cd "${tmp}" && grep " ${bin}\$" checksums.txt | sha256sum -c - )
+        chmod +x "${tmp}/${bin}"
+        echo "FC_BIN=${tmp}/${bin}" >> "$GITHUB_ENV"
+
+    - name: Start field-cage agent
+      shell: bash
+      env:
+        FC_CONFIG: ${{ inputs.config }}
+        FC_MODE: ${{ inputs.mode }}
+        FC_LOG: ${{ inputs.log-file }}
+      run: |
+        set -euo pipefail
+        args=()
+        if [ -n "${FC_CONFIG}" ]; then args+=(--config "${FC_CONFIG}"); fi
+        if [ -n "${FC_MODE}" ]; then args+=(--mode "${FC_MODE}"); fi
+        echo "field-cage: starting agent (log: ${FC_LOG})"
+        sudo nohup "${FC_BIN}" "${args[@]}" > "${FC_LOG}" 2>&1 &
+        FC_PID=$!
+        # Give the agent a moment to load its eBPF programs before later steps
+        # generate traffic. The agent keeps running for the rest of the job.
+        sleep 2
+        # Fail fast if the agent exited during startup (wrong config, missing
+        # eBPF capabilities, block-mode DNS capture failure, etc.).
+        if ! sudo kill -0 "${FC_PID}" 2>/dev/null; then
+          echo "::error::field-cage agent exited unexpectedly. Check the log below." >&2
+          cat "${FC_LOG}" >&2 || true
+          exit 1
+        fi
+        echo "field-cage: agent started (pid=${FC_PID})"

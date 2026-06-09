@@ -1,0 +1,36 @@
+name: tagpr
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  tagpr:
+    name: Maintain release PR / tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # tagpr maintains a "release PR" that bumps the CHANGELOG and the next
+      # version; merging that PR pushes the vX.Y.Z tag, which triggers release.yml.
+      #
+      # NOTE: a tag pushed using the default GITHUB_TOKEN does NOT trigger other
+      # workflows. To let the pushed tag fire release.yml, tagpr must push with a
+      # PAT (repo scope), provided via the TAGPR_TOKEN secret.
+      - name: Check TAGPR_TOKEN secret
+        env:
+          TAGPR_TOKEN: ${{ secrets.TAGPR_TOKEN }}
+        run: |
+          if [ -z "${TAGPR_TOKEN}" ]; then
+            echo "::error::TAGPR_TOKEN secret is not set. tagpr requires a PAT with repo scope to push tags that trigger release.yml. See the Maintainer note in README." >&2
+            exit 1
+          fi
+
+      - uses: Songmu/tagpr@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.TAGPR_TOKEN }}
