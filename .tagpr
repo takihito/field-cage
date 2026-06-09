@@ -6,3 +6,4 @@
     releaseBranch = main
     # Maintain CHANGELOG.md from merged PRs.
     changelog = true
+	versionFile = -
