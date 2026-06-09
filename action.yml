@@ -67,7 +67,7 @@ runs:
         sleep 2
         # Fail fast if the agent exited during startup (wrong config, missing
         # eBPF capabilities, block-mode DNS capture failure, etc.).
-        if ! kill -0 "${FC_PID}" 2>/dev/null; then
+        if ! sudo kill -0 "${FC_PID}" 2>/dev/null; then
           echo "::error::field-cage agent exited unexpectedly. Check the log below." >&2
           cat "${FC_LOG}" >&2 || true
           exit 1
