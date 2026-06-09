@@ -75,7 +75,7 @@ release-snapshot:
 	docker run --rm \
 		-v "$(CURDIR):/src" \
 		-w /src \
-		goreleaser/goreleaser:latest \
+		goreleaser/goreleaser:v2 \
 		release --snapshot --clean --skip=before
 
 # Remove bpf2go-generated files and cached Docker volumes

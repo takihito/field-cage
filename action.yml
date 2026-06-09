@@ -37,7 +37,9 @@ runs:
         esac
         bin="field-cage_linux_${ARCH}"
         base="https://github.com/takihito/field-cage/releases/download/${FC_VERSION}"
-        tmp="$(mktemp -d)"
+        # Use RUNNER_TEMP (exec-safe on GitHub-hosted runners) when available;
+        # fall back to /tmp for local testing.
+        tmp="$(mktemp -d -p "${RUNNER_TEMP:-/tmp}")"
         echo "field-cage: downloading ${bin} (${FC_VERSION})"
         curl -fsSL "${base}/${bin}" -o "${tmp}/${bin}"
         curl -fsSL "${base}/checksums.txt" -o "${tmp}/checksums.txt"
@@ -59,7 +61,15 @@ runs:
         if [ -n "${FC_MODE}" ]; then args+=(--mode "${FC_MODE}"); fi
         echo "field-cage: starting agent (log: ${FC_LOG})"
         sudo nohup "${FC_BIN}" "${args[@]}" > "${FC_LOG}" 2>&1 &
+        FC_PID=$!
         # Give the agent a moment to load its eBPF programs before later steps
         # generate traffic. The agent keeps running for the rest of the job.
         sleep 2
-        echo "field-cage: agent started"
+        # Fail fast if the agent exited during startup (wrong config, missing
+        # eBPF capabilities, block-mode DNS capture failure, etc.).
+        if ! kill -0 "${FC_PID}" 2>/dev/null; then
+          echo "::error::field-cage agent exited unexpectedly. Check the log below." >&2
+          cat "${FC_LOG}" >&2 || true
+          exit 1
+        fi
+        echo "field-cage: agent started (pid=${FC_PID})"
