@@ -6,4 +6,7 @@
     releaseBranch = main
     # Maintain CHANGELOG.md from merged PRs.
     changelog = true
+    # Do not create a GitHub Release; GoReleaser (release.yml) handles that
+    # so binaries and checksums are published alongside the release notes.
+    noRelease = true
 	versionFile = -

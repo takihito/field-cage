@@ -14,7 +14,14 @@ jobs:
     name: Maintain release PR / tag
     runs-on: ubuntu-latest
     steps:
+      # token: must be TAGPR_TOKEN (PAT), not the default GITHUB_TOKEN.
+      # actions/checkout configures git credentials from this token; tagpr's
+      # internal `git push origin vX.Y.Z` therefore uses the PAT, which
+      # triggers release.yml. A push made with the built-in GITHUB_TOKEN would
+      # NOT trigger other workflows (GitHub Actions loop-prevention).
       - uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.TAGPR_TOKEN }}
 
       # tagpr maintains a "release PR" that bumps the CHANGELOG and the next
       # version; merging that PR pushes the vX.Y.Z tag, which triggers release.yml.
