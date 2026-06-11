@@ -70,8 +70,7 @@ runs:
       run: |
         set -euo pipefail
 
-        # Build effective config path: inline `allow` list takes precedence over
-        # an explicit `config` file; using both at once is an error.
+        # `allow` and `config` are mutually exclusive: using both at once is an error.
         if [ -n "${FC_ALLOW}" ] && [ -n "${FC_CONFIG}" ]; then
           echo "::error::Cannot use both 'allow' and 'config' inputs at the same time. Use one or the other." >&2
           exit 1
@@ -87,7 +86,12 @@ runs:
               line="${line#"${line%%[! ]*}"}"
               line="${line%"${line##*[! ]}"}"
               [ -z "${line}" ] && continue
-              printf '  - %s\n' "${line}"
+              # Single-quote each entry to prevent YAML injection from
+              # caller-controlled values that contain metacharacters
+              # (e.g. ": ", "[", "{"). A literal single-quote is escaped
+              # as '' per the YAML single-quoted scalar spec.
+              line="${line//\'/\'\'}"
+              printf "  - '%s'\n" "${line}"
             done <<< "${FC_ALLOW}"
           } > "${tmp_cfg}"
           FC_CONFIG="${tmp_cfg}"
