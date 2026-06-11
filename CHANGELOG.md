@@ -2,6 +2,10 @@
 
 Release notes are maintained automatically by [tagpr](https://github.com/Songmu/tagpr).
 
+## [v0.0.2](https://github.com/takihito/field-cage/compare/v0.0.1...v0.0.2) - 2026-06-11
+
+- Add inline allowlist input to composite action by @takihito in https://github.com/takihito/field-cage/pull/11
+
 ## [v0.0.1](https://github.com/takihito/field-cage/commits/v0.0.1) - 2026-06-10
 
 - Added AGENTS.md CLAUDE.md by @takihito in https://github.com/takihito/field-cage/pull/1
