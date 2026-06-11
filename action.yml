@@ -81,10 +81,10 @@ runs:
             printf 'mode: %s\n' "${FC_MODE:-audit}"
             printf 'allowlist:\n'
             while IFS= read -r line; do
-              # strip inline comments and surrounding whitespace
+              # strip inline comments and surrounding whitespace (spaces and tabs)
               line="${line%%#*}"
-              line="${line#"${line%%[! ]*}"}"
-              line="${line%"${line##*[! ]}"}"
+              line="${line#"${line%%[![:space:]]*}"}"
+              line="${line%"${line##*[![:space:]]}"}"
               [ -z "${line}" ] && continue
               # Single-quote each entry to prevent YAML injection from
               # caller-controlled values that contain metacharacters
