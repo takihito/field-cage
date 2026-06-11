@@ -66,6 +66,22 @@ Use the composite action to run field-cage on a runner. It downloads the
 pinned release binary, verifies its SHA-256 checksum, and starts the agent in
 the background for the rest of the job.
 
+**Inline allowlist** (no separate file needed):
+
+```yaml
+- uses: takihito/field-cage@v0.1.0
+  with:
+    version: v0.1.0
+    mode: block
+    allow: |
+      github.com
+      api.github.com
+      objects.githubusercontent.com
+      registry.npmjs.org
+```
+
+**External config file** (for complex or shared policies):
+
 ```yaml
 - uses: takihito/field-cage@v0.1.0
   with:
@@ -73,6 +89,8 @@ the background for the rest of the job.
     config: .github/field-cage-policy.yml    # omit for audit mode with no policy
     mode: audit                              # audit (log-only) or block
 ```
+
+`allow` and `config` are mutually exclusive — using both at the same time is an error.
 
 - **Audit mode is safe to add to any workflow** — it only logs outbound
   connections and never blocks them.

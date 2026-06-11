@@ -67,6 +67,22 @@ Composite Action でランナー上に field-cage を起動できます。指定
 リリースバイナリを取得し、SHA-256 チェックサムを検証してから、ジョブの残りの
 期間バックグラウンドでエージェントを実行します。
 
+**インライン allowlist**（別ファイル不要）:
+
+```yaml
+- uses: takihito/field-cage@v0.1.0
+  with:
+    version: v0.1.0
+    mode: block
+    allow: |
+      github.com
+      api.github.com
+      objects.githubusercontent.com
+      registry.npmjs.org
+```
+
+**外部 config ファイル**（複雑なポリシーや複数ワークフロー共有の場合）:
+
 ```yaml
 - uses: takihito/field-cage@v0.1.0
   with:
@@ -74,6 +90,8 @@ Composite Action でランナー上に field-cage を起動できます。指定
     config: .github/field-cage-policy.yml    # 省略時はポリシー無しの audit
     mode: audit                              # audit（ログのみ）または block
 ```
+
+`allow` と `config` は同時に指定できません。両方を指定するとエラーになります。
 
 - **audit モードはどのワークフローにも安全に追加できます** — アウトバウンド接続を
   記録するだけで遮断しません。
