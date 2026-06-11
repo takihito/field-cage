@@ -16,6 +16,18 @@ inputs:
     description: "Enforcement mode: audit or block. Overrides the mode in the policy file."
     required: false
     default: ""
+  allow:
+    description: |
+      Newline-separated list of allowed domains or IP addresses.
+      Use this instead of a config file for simple inline allowlists.
+      Cannot be combined with the `config` input.
+      Example:
+        allow: |
+          github.com
+          api.github.com
+          registry.npmjs.org
+    required: false
+    default: ""
   log-file:
     description: "Path the agent writes its log to."
     required: false
@@ -52,10 +64,35 @@ runs:
       shell: bash
       env:
         FC_CONFIG: ${{ inputs.config }}
+        FC_ALLOW: ${{ inputs.allow }}
         FC_MODE: ${{ inputs.mode }}
         FC_LOG: ${{ inputs.log-file }}
       run: |
         set -euo pipefail
+
+        # Build effective config path: inline `allow` list takes precedence over
+        # an explicit `config` file; using both at once is an error.
+        if [ -n "${FC_ALLOW}" ] && [ -n "${FC_CONFIG}" ]; then
+          echo "::error::Cannot use both 'allow' and 'config' inputs at the same time. Use one or the other." >&2
+          exit 1
+        fi
+        if [ -n "${FC_ALLOW}" ]; then
+          tmp_cfg="$(mktemp -p "${RUNNER_TEMP:-/tmp}" field-cage-policy-XXXXXX.yml)"
+          {
+            printf 'mode: %s\n' "${FC_MODE:-audit}"
+            printf 'allowlist:\n'
+            while IFS= read -r line; do
+              # strip inline comments and surrounding whitespace
+              line="${line%%#*}"
+              line="${line#"${line%%[! ]*}"}"
+              line="${line%"${line##*[! ]}"}"
+              [ -z "${line}" ] && continue
+              printf '  - %s\n' "${line}"
+            done <<< "${FC_ALLOW}"
+          } > "${tmp_cfg}"
+          FC_CONFIG="${tmp_cfg}"
+        fi
+
         args=()
         if [ -n "${FC_CONFIG}" ]; then args+=(--config "${FC_CONFIG}"); fi
         if [ -n "${FC_MODE}" ]; then args+=(--mode "${FC_MODE}"); fi
