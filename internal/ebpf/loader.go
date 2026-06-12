@@ -17,31 +17,34 @@ import (
 
 // Event represents a captured outbound IPv4 connection attempt.
 type Event struct {
-	PID    uint32
-	TGID   uint32
-	DPort  uint16
-	DAddr  net.IP
-	Comm   string
-	Domain string // resolved domain name, empty if not yet in DNS cache
+	PID       uint32
+	TGID      uint32
+	DPort     uint16
+	DAddr     net.IP
+	Comm      string
+	Domain    string // resolved domain name, empty if not yet in DNS cache
+	ConnectMs uint32 // TCP connect() duration in milliseconds (0 for non-blocking sockets)
 }
 
 // connectEvent mirrors the C struct event layout for binary deserialization.
 type connectEvent struct {
-	Pid    uint32
-	Tgid   uint32
-	Dport  uint16
-	Family uint16
-	Daddr  [4]byte
-	Comm   [16]byte
+	Pid       uint32
+	Tgid      uint32
+	Dport     uint16
+	Family    uint16
+	Daddr     [4]byte
+	Comm      [16]byte
+	ConnectNs uint64
 }
 
-// Watcher attaches to the sys_enter_connect tracepoint and streams Events.
-// It also runs a DNS cache that annotates events with resolved domain names.
-// When blockObjs is non-nil, AllowIP populates the allowlist enforced by the
-// cgroup/connect4 program (default-deny).
+// Watcher attaches to the sys_enter_connect and sys_exit_connect tracepoints
+// and streams Events. It also runs a DNS cache that annotates events with
+// resolved domain names. When blockObjs is non-nil, AllowIP populates the
+// allowlist enforced by the cgroup/connect4 program (default-deny).
 type Watcher struct {
 	objs       ConnectObjects
-	tp         link.Link
+	tp         link.Link // sys_enter_connect
+	tpExit     link.Link // sys_exit_connect
 	reader     *ringbuf.Reader
 	dnsCache   *DNSCache
 	dnsWatcher *dnsWatcher
@@ -77,10 +80,17 @@ func newWatcher(cgroupPath string, isAllowedDomain func(string) bool) (*Watcher,
 		return nil, fmt.Errorf("load eBPF objects: %w", err)
 	}
 
-	tp, err := link.Tracepoint("syscalls", "sys_enter_connect", objs.TraceConnect, nil)
+	tp, err := link.Tracepoint("syscalls", "sys_enter_connect", objs.TraceConnectEnter, nil)
 	if err != nil {
 		objs.Close()
 		return nil, fmt.Errorf("attach tracepoint syscalls/sys_enter_connect: %w", err)
+	}
+
+	tpExit, err := link.Tracepoint("syscalls", "sys_exit_connect", objs.TraceConnectExit, nil)
+	if err != nil {
+		tp.Close()
+		objs.Close()
+		return nil, fmt.Errorf("attach tracepoint syscalls/sys_exit_connect: %w", err)
 	}
 
 	reader, err := ringbuf.NewReader(objs.Events)
@@ -91,7 +101,7 @@ func newWatcher(cgroupPath string, isAllowedDomain func(string) bool) (*Watcher,
 	}
 
 	cache := newDNSCache()
-	w := &Watcher{objs: objs, tp: tp, reader: reader, dnsCache: cache}
+	w := &Watcher{objs: objs, tp: tp, tpExit: tpExit, reader: reader, dnsCache: cache}
 
 	// Attach the enforcement program before starting the DNS watcher so that
 	// AllowIP can populate the allowlist as soon as DNS responses arrive.
@@ -199,11 +209,12 @@ func parseEvent(data []byte) (*Event, error) {
 		return nil, fmt.Errorf("parse event: %w", err)
 	}
 	return &Event{
-		PID:   raw.Pid,
-		TGID:  raw.Tgid,
-		DPort: raw.Dport,
-		DAddr: net.IP(raw.Daddr[:]),
-		Comm:  nullTerminatedString(raw.Comm[:]),
+		PID:       raw.Pid,
+		TGID:      raw.Tgid,
+		DPort:     raw.Dport,
+		DAddr:     net.IP(raw.Daddr[:]),
+		Comm:      nullTerminatedString(raw.Comm[:]),
+		ConnectMs: uint32(raw.ConnectNs / 1_000_000),
 	}, nil
 }
 
@@ -226,8 +237,13 @@ func (w *Watcher) Close() error {
 	if err := w.reader.Close(); err != nil {
 		errs = append(errs, fmt.Errorf("reader: %w", err))
 	}
+	if w.tpExit != nil {
+		if err := w.tpExit.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("tracepoint sys_exit_connect: %w", err))
+		}
+	}
 	if err := w.tp.Close(); err != nil {
-		errs = append(errs, fmt.Errorf("tracepoint: %w", err))
+		errs = append(errs, fmt.Errorf("tracepoint sys_enter_connect: %w", err))
 	}
 	w.objs.Close()
 	return errors.Join(errs...)
