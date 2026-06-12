@@ -23,7 +23,9 @@ type Event struct {
 	DAddr     net.IP
 	Comm      string
 	Domain    string // resolved domain name, empty if not yet in DNS cache
-	ConnectMs uint32 // TCP connect() duration in milliseconds (0 for non-blocking sockets)
+	ConnectMs uint32 // connect() syscall duration in milliseconds; 0 for non-blocking sockets
+	// that return EINPROGRESS immediately. Also covers UDP connect() which
+	// just sets the default destination and returns instantly.
 }
 
 // connectEvent mirrors the C struct event layout for binary deserialization.
@@ -95,6 +97,7 @@ func newWatcher(cgroupPath string, isAllowedDomain func(string) bool) (*Watcher,
 
 	reader, err := ringbuf.NewReader(objs.Events)
 	if err != nil {
+		tpExit.Close()
 		tp.Close()
 		objs.Close()
 		return nil, fmt.Errorf("open ringbuf reader: %w", err)

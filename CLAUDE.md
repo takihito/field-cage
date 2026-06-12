@@ -29,8 +29,8 @@ Key goals:
 ## Planned Architecture
 
 ### eBPF component (C)
-- `tracepoint/syscalls/sys_enter_connect` — hooks outbound connection attempts (portable across kernel versions and architectures; prefer over `kprobe/sys_connect` which is symbol-name-dependent). Also stores `bpf_ktime_get_ns()` in a per-`{tgid,fd}` hash map for connect-time measurement.
-- `tracepoint/syscalls/sys_exit_connect` — paired with `sys_enter_connect`; looks up the stored timestamp, computes elapsed nanoseconds, and emits the event with `connect_ns` so the Go agent can report `connect_ms` per connection.
+- `tracepoint/syscalls/sys_enter_connect` — hooks outbound connection attempts (portable across kernel versions and architectures; prefer over `kprobe/sys_connect` which is symbol-name-dependent). Also stores `bpf_ktime_get_ns()` in a `pending_connects` hash map keyed by `pid_tgid` (`u64`: upper 32 bits = tgid, lower 32 bits = pid) for connect-time measurement.
+- `tracepoint/syscalls/sys_exit_connect` — paired with `sys_enter_connect`; looks up the stored timestamp by `pid_tgid`, computes elapsed nanoseconds, and emits the event with `connect_ns` so the Go agent can report `connect_ms` per connection.
 - `socket_filter` on port 53 — sniffs DNS packets to build IP→domain mapping
 - `cgroup/connect4` — in Block mode, enforces a default-deny allowlist: returns `0` (which makes the kernel fail the `connect()` with `EPERM`) for any destination not in the `allowed_ips` map. DNS (port 53) and loopback are always permitted. (An earlier design considered `bpf_override_return` on the connect tracepoint; `cgroup/connect4` was chosen instead because it enforces synchronously before the connection is made, closing the first-connection gap.)
 

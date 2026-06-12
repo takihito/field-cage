@@ -101,7 +101,11 @@ int trace_connect_enter(struct connect_enter_args *ctx)
 	__builtin_memcpy(pc.daddr, &sa.sin_addr.s_addr, 4);
 	bpf_get_current_comm(pc.comm, sizeof(pc.comm));
 
-	bpf_map_update_elem(&pending_connects, &pid_tgid, &pc, BPF_ANY);
+	// If the map is full, the event will be silently dropped at sys_exit_connect.
+	// Using BPF_MAP_TYPE_LRU_HASH instead of BPF_MAP_TYPE_HASH would auto-evict
+	// stale entries and prevent this; for now just return cleanly on failure.
+	if (bpf_map_update_elem(&pending_connects, &pid_tgid, &pc, BPF_ANY) < 0)
+		return 0;
 	return 0;
 }
 
