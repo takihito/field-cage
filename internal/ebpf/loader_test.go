@@ -29,12 +29,13 @@ func TestNullTerminatedString(t *testing.T) {
 
 func TestParseEvent(t *testing.T) {
 	raw := connectEvent{
-		Pid:    1234,
-		Tgid:   1234,
-		Dport:  443,
-		Family: 2, // AF_INET
-		Daddr:  [4]byte{93, 184, 216, 34},
-		Comm:   [16]byte{'c', 'u', 'r', 'l'},
+		Pid:       1234,
+		Tgid:      1234,
+		Dport:     443,
+		Family:    2, // AF_INET
+		Daddr:     [4]byte{93, 184, 216, 34},
+		Comm:      [16]byte{'c', 'u', 'r', 'l'},
+		ConnectNs: 23_500_000, // 23.5 ms → 23 ms after truncation
 	}
 
 	buf := new(bytes.Buffer)
@@ -59,6 +60,9 @@ func TestParseEvent(t *testing.T) {
 	}
 	if ev.Comm != "curl" {
 		t.Errorf("Comm = %q, want %q", ev.Comm, "curl")
+	}
+	if ev.ConnectMs != 23 {
+		t.Errorf("ConnectMs = %d, want 23", ev.ConnectMs)
 	}
 }
 

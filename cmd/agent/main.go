@@ -126,17 +126,28 @@ func main() {
 			// The verdict here is observational only. In block mode the kernel
 			// enforces the allowlist directly via the cgroup/connect4 program;
 			// this log reflects the policy decision for the captured event.
-			verdict := "ALLOW"
-			if engine != nil && !engine.Allow(ev.Domain, net.IP(ev.DAddr)) {
+			//
+			// DNS (port 53) and loopback are excluded from enforcement at the
+			// eBPF level and are labelled SKIP rather than DENY to avoid
+			// misleading the user into thinking the connection was blocked.
+			var verdict string
+			switch {
+			case ev.DPort == 53:
+				verdict = "SKIP(dns)"
+			case net.IP(ev.DAddr).IsLoopback():
+				verdict = "SKIP(loopback)"
+			case engine != nil && !engine.Allow(ev.Domain, net.IP(ev.DAddr)):
 				if ev.Domain == "" {
 					verdict = "DENY(no-domain)"
 				} else {
 					verdict = "DENY(not-in-policy)"
 				}
+			default:
+				verdict = "ALLOW"
 			}
 
-			fmt.Printf("verdict=%-20s pid=%-6d tgid=%-6d comm=%-16s dst=%s:%d\n",
-				verdict, ev.PID, ev.TGID, ev.Comm, dst, ev.DPort)
+			fmt.Printf("verdict=%-20s pid=%-6d tgid=%-6d comm=%-16s dst=%s:%d connect_ms=%d\n",
+				verdict, ev.PID, ev.TGID, ev.Comm, dst, ev.DPort, ev.ConnectMs)
 		}
 	}()
 
