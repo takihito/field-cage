@@ -26,7 +26,7 @@ var version = "dev"
 
 var (
 	configPath  = flag.String("config", "", "path to YAML policy file (omit to allow all)")
-	mode        = flag.String("mode", "", "enforcement mode: audit or block (overrides policy file)")
+	modeFlag    = flag.String("mode", "", "enforcement mode: audit or block (overrides policy file)")
 	showVersion = flag.Bool("version", false, "print version and exit")
 )
 
@@ -38,44 +38,57 @@ func main() {
 		return
 	}
 
-	var engine *policy.Engine
-	if *configPath != "" {
-		var err error
-		engine, err = policy.LoadFile(*configPath)
-		if err != nil {
-			log.Fatalf("field-cage: load policy: %v", err)
-		}
+	if err := run(*configPath, *modeFlag); err != nil {
+		log.Fatalf("field-cage: %v", err)
 	}
+}
 
-	// --mode flag overrides the mode in the policy file.
-	effectiveMode := policy.ModeAudit
+// resolveMode determines the effective enforcement mode: the --mode flag
+// overrides the mode from the policy file; without either, audit is the
+// default. Block mode is default-deny, so it requires a policy: without an
+// allowlist every outbound connection would be rejected, bricking the runner.
+func resolveMode(flagMode string, engine *policy.Engine) (policy.Mode, error) {
+	mode := policy.ModeAudit
 	if engine != nil {
-		effectiveMode = engine.Mode()
+		mode = engine.Mode()
 	}
-	if *mode != "" {
-		effectiveMode = policy.Mode(*mode)
-		switch effectiveMode {
+	if flagMode != "" {
+		mode = policy.Mode(flagMode)
+		switch mode {
 		case policy.ModeAudit, policy.ModeBlock:
 		default:
-			log.Fatalf("field-cage: invalid --mode %q: must be \"audit\" or \"block\"", *mode)
+			return "", fmt.Errorf("invalid --mode %q: must be %q or %q", flagMode, policy.ModeAudit, policy.ModeBlock)
+		}
+	}
+	if mode == policy.ModeBlock && engine == nil {
+		return "", fmt.Errorf("block mode requires a policy file (use --config); refusing to deny all traffic")
+	}
+	return mode, nil
+}
+
+func run(configPath, flagMode string) error {
+	var engine *policy.Engine
+	if configPath != "" {
+		var err error
+		engine, err = policy.LoadFile(configPath)
+		if err != nil {
+			return fmt.Errorf("load policy: %w", err)
 		}
 	}
 
-	// Block mode is default-deny: without an allowlist every outbound connection
-	// would be rejected, bricking the runner. Require an explicit policy.
-	if effectiveMode == policy.ModeBlock && engine == nil {
-		log.Fatalf("field-cage: block mode requires a policy file (use --config); refusing to deny all traffic")
+	mode, err := resolveMode(flagMode, engine)
+	if err != nil {
+		return err
 	}
 
 	var watcher *ebpf.Watcher
-	var err error
-	if effectiveMode == policy.ModeBlock {
+	if mode == policy.ModeBlock {
 		watcher, err = ebpf.NewBlockWatcher("/sys/fs/cgroup", engine.IsAllowedDomain)
 	} else {
 		watcher, err = ebpf.NewWatcher()
 	}
 	if err != nil {
-		log.Fatalf("field-cage: failed to start: %v", err)
+		return fmt.Errorf("failed to start: %w", err)
 	}
 	defer func() {
 		if err := watcher.Close(); err != nil {
@@ -86,16 +99,16 @@ func main() {
 	// Seed the allowlist before announcing readiness so that connections to
 	// already-resolvable allowlisted domains and explicit IPs are permitted from
 	// the first attempt.
-	if effectiveMode == policy.ModeBlock {
+	if mode == policy.ModeBlock {
 		seedAllowlist(watcher, engine)
 	}
 
-	modeLabel := string(effectiveMode)
+	modeLabel := string(mode)
 	if engine == nil {
-		modeLabel = string(effectiveMode) + " (no policy)"
+		modeLabel += " (no policy)"
 	}
 	fmt.Fprintf(os.Stderr, "field-cage %s: watching outbound connections [mode=%s] (Ctrl+C to stop)\n", version, modeLabel)
-	if effectiveMode == policy.ModeBlock {
+	if mode == policy.ModeBlock {
 		// Enforcement is default-deny: the cgroup/connect4 program rejects any
 		// outbound connection whose destination IP is not on the allowlist.
 		// DNS (port 53) and loopback (127.0.0.0/8) are always permitted so name
@@ -143,8 +156,9 @@ func main() {
 	case <-sig:
 		fmt.Fprintln(os.Stderr, "\nfield-cage: shutting down")
 	case err := <-readErr:
-		log.Fatalf("field-cage: reader error: %v", err)
+		return fmt.Errorf("reader error: %w", err)
 	}
+	return nil
 }
 
 // seedAllowlist primes the enforcement map with the policy's explicit IP
