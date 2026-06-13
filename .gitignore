@@ -34,6 +34,9 @@ go.work.sum
 # issue
 issues
 
+# plan
+plan
+
 # GoReleaser build output
 dist/
 
