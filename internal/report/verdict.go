@@ -85,6 +85,10 @@ type Line struct {
 // stable output format:
 //
 //	verdict=<V> pid=<P> tgid=<T> comm=<C> dst=<domain> (<ip>):<port> connect_ms=<ms>
+//	verdict=<V> pid=<P> tgid=<T> comm=<C> dst=<ip>:<port> connect_ms=<ms>
+//
+// The dst field uses the two-form format when a domain name is known (via Dst),
+// or the IP-only form when no domain has been resolved yet.
 func (l Line) String() string {
 	return fmt.Sprintf("verdict=%-20s pid=%-6d tgid=%-6d comm=%-16s dst=%s:%d connect_ms=%d",
 		l.Verdict, l.PID, l.TGID, l.Comm, l.Dst, l.DPort, l.ConnectMs)
