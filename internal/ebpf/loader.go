@@ -3,41 +3,16 @@
 package ebpf
 
 import (
-	"bytes"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"log"
 	"net"
+
 	ciliumebpf "github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/ringbuf"
 	"github.com/cilium/ebpf/rlimit"
 )
-
-// Event represents a captured outbound IPv4 connection attempt.
-type Event struct {
-	PID       uint32
-	TGID      uint32
-	DPort     uint16
-	DAddr     net.IP
-	Comm      string
-	Domain    string // resolved domain name, empty if not yet in DNS cache
-	ConnectMs uint32 // connect() syscall duration in milliseconds; 0 for non-blocking sockets
-	// that return EINPROGRESS immediately. Also covers UDP connect() which
-	// just sets the default destination and returns instantly.
-}
-
-// connectEvent mirrors the C struct event layout for binary deserialization.
-type connectEvent struct {
-	Pid       uint32
-	Tgid      uint32
-	Dport     uint16
-	Family    uint16
-	Daddr     [4]byte
-	Comm      [16]byte
-	ConnectNs uint64
-}
 
 // Watcher attaches to the sys_enter_connect and sys_exit_connect tracepoints
 // and streams Events. It also runs a DNS cache that annotates events with
@@ -71,8 +46,23 @@ func NewBlockWatcher(cgroupPath string, isAllowedDomain func(string) bool) (*Wat
 	return newWatcher(cgroupPath, isAllowedDomain)
 }
 
-func newWatcher(cgroupPath string, isAllowedDomain func(string) bool) (*Watcher, error) {
+func newWatcher(cgroupPath string, isAllowedDomain func(string) bool) (w *Watcher, err error) {
 	withBlock := cgroupPath != ""
+
+	// Cleanup stack: every successfully acquired resource pushes its release
+	// function; on any subsequent error the deferred unwind closes them in
+	// reverse order. This makes it impossible to leak an earlier resource by
+	// forgetting it on a later error path (which has bitten us before — the
+	// sys_exit_connect tracepoint was once leaked exactly this way).
+	var cleanups []func()
+	defer func() {
+		if err != nil {
+			for i := len(cleanups) - 1; i >= 0; i-- {
+				cleanups[i]()
+			}
+		}
+	}()
+
 	if err := rlimit.RemoveMemlock(); err != nil {
 		return nil, fmt.Errorf("remove memlock rlimit: %w", err)
 	}
@@ -81,38 +71,39 @@ func newWatcher(cgroupPath string, isAllowedDomain func(string) bool) (*Watcher,
 	if err := LoadConnectObjects(&objs, nil); err != nil {
 		return nil, fmt.Errorf("load eBPF objects: %w", err)
 	}
+	cleanups = append(cleanups, func() { objs.Close() })
 
 	tp, err := link.Tracepoint("syscalls", "sys_enter_connect", objs.TraceConnectEnter, nil)
 	if err != nil {
-		objs.Close()
 		return nil, fmt.Errorf("attach tracepoint syscalls/sys_enter_connect: %w", err)
 	}
+	cleanups = append(cleanups, func() { tp.Close() }) //nolint:errcheck
 
 	tpExit, err := link.Tracepoint("syscalls", "sys_exit_connect", objs.TraceConnectExit, nil)
 	if err != nil {
-		tp.Close()
-		objs.Close()
 		return nil, fmt.Errorf("attach tracepoint syscalls/sys_exit_connect: %w", err)
 	}
+	cleanups = append(cleanups, func() { tpExit.Close() }) //nolint:errcheck
 
 	reader, err := ringbuf.NewReader(objs.Events)
 	if err != nil {
-		tpExit.Close()
-		tp.Close()
-		objs.Close()
 		return nil, fmt.Errorf("open ringbuf reader: %w", err)
 	}
+	cleanups = append(cleanups, func() { reader.Close() }) //nolint:errcheck
 
 	cache := newDNSCache()
-	w := &Watcher{objs: objs, tp: tp, tpExit: tpExit, reader: reader, dnsCache: cache}
+	w = &Watcher{objs: objs, tp: tp, tpExit: tpExit, reader: reader, dnsCache: cache}
 
 	// Attach the enforcement program before starting the DNS watcher so that
 	// AllowIP can populate the allowlist as soon as DNS responses arrive.
 	if withBlock {
 		if err := w.attachBlock(cgroupPath); err != nil {
-			w.Close() //nolint:errcheck
 			return nil, fmt.Errorf("attach block program: %w", err)
 		}
+		cleanups = append(cleanups, func() {
+			w.cgroupLink.Close() //nolint:errcheck
+			w.blockObjs.Close()
+		})
 	}
 
 	// In block mode, observed DNS responses for allowlisted domains are added to
@@ -129,7 +120,6 @@ func newWatcher(cgroupPath string, isAllowedDomain func(string) bool) (*Watcher,
 			// could ever be permitted, so any domain whose address rotates (CDNs,
 			// round-robin) would be denied. Fail loudly rather than silently
 			// mis-enforcing policy.
-			w.Close() //nolint:errcheck
 			return nil, fmt.Errorf(
 				"DNS capture is required in block mode but could not start: %w\n"+
 					"  Possible causes:\n"+
@@ -206,21 +196,6 @@ func (w *Watcher) Read() (*Event, error) {
 	return ev, nil
 }
 
-func parseEvent(data []byte) (*Event, error) {
-	var raw connectEvent
-	if err := binary.Read(bytes.NewReader(data), binary.NativeEndian, &raw); err != nil {
-		return nil, fmt.Errorf("parse event: %w", err)
-	}
-	return &Event{
-		PID:       raw.Pid,
-		TGID:      raw.Tgid,
-		DPort:     raw.Dport,
-		DAddr:     net.IP(raw.Daddr[:]),
-		Comm:      nullTerminatedString(raw.Comm[:]),
-		ConnectMs: uint32(raw.ConnectNs / 1_000_000),
-	}, nil
-}
-
 // Close releases all eBPF resources and returns the first error encountered.
 func (w *Watcher) Close() error {
 	var errs []error
@@ -250,11 +225,4 @@ func (w *Watcher) Close() error {
 	}
 	w.objs.Close()
 	return errors.Join(errs...)
-}
-
-func nullTerminatedString(b []byte) string {
-	if i := bytes.IndexByte(b, 0); i >= 0 {
-		return string(b[:i])
-	}
-	return string(b)
 }
