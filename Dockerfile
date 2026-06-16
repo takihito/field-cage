@@ -17,13 +17,15 @@ RUN case $(uname -m) in \
     esac && \
     ln -sf /usr/include/${TRIPLET}/asm /usr/include/asm
 
-# Install bpf2go at the version pinned in go.mod
-RUN go install github.com/cilium/ebpf/cmd/bpf2go@v0.14.0
-
 WORKDIR /src
 
 COPY go.mod go.sum ./
 RUN go mod download
+
+# Install bpf2go at the version pinned in go.mod (keeps tool and library in sync).
+# Must run after go mod download so go list -m can resolve the module graph.
+RUN EBPF_VERSION=$(go list -m -f '{{.Version}}' github.com/cilium/ebpf) && \
+    go install github.com/cilium/ebpf/cmd/bpf2go@${EBPF_VERSION}
 
 COPY . .
 
