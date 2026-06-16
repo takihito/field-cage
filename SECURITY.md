@@ -7,7 +7,7 @@ Only the latest release is supported with security fixes.
 | Version | Supported |
 |---------|-----------|
 | Latest  | ✓         |
-| Older   | ✗         |
+| Older   | △ (not recommended) |
 
 ## Reporting a Vulnerability
 
@@ -24,7 +24,7 @@ Use [GitHub Security Advisories](https://github.com/takihito/field-cage/security
 
 ### Response process
 
-1. **Acknowledgement** — We will acknowledge receipt within 3 business days.
+1. **Acknowledgement** — We will acknowledge receipt within 7 business days.
 2. **Assessment** — We will assess severity and scope, and keep you updated.
 3. **Fix & disclosure** — We will prepare a fix, request a CVE if appropriate, and coordinate disclosure timing with you.
 4. **Release** — A patched release will be published and the advisory made public.
