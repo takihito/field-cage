@@ -1,5 +1,5 @@
 # Stage 1: compile eBPF C → Go bindings → static binary
-FROM golang:1.22-bullseye AS builder
+FROM golang:1.25-bookworm AS builder
 
 RUN set -e; \
     apt-get update; \
