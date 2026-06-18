@@ -37,7 +37,9 @@ jobs:
           sudo ln -sf /usr/include/${TRIPLET}/asm /usr/include/asm
 
       - name: Install bpf2go
-        run: go install github.com/cilium/ebpf/cmd/bpf2go@v0.14.0
+        run: |
+          EBPF_VERSION=$(go list -m -f '{{.Version}}' github.com/cilium/ebpf)
+          go install github.com/cilium/ebpf/cmd/bpf2go@${EBPF_VERSION}
 
       - name: Generate eBPF bindings
         run: go generate ./internal/ebpf/...
@@ -73,7 +75,9 @@ jobs:
           sudo ln -sf /usr/include/${TRIPLET}/asm /usr/include/asm
 
       - name: Install bpf2go
-        run: go install github.com/cilium/ebpf/cmd/bpf2go@v0.14.0
+        run: |
+          EBPF_VERSION=$(go list -m -f '{{.Version}}' github.com/cilium/ebpf)
+          go install github.com/cilium/ebpf/cmd/bpf2go@${EBPF_VERSION}
 
       - name: Generate eBPF bindings
         run: go generate ./internal/ebpf/...
