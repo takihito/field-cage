@@ -14,6 +14,11 @@ jobs:
     name: Maintain release PR / tag
     runs-on: ubuntu-latest
     steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@9af89fc71515a100421586dfdb3dc9c984fbf411 # v2.19.4
+        with:
+          egress-policy: audit
+
       # token: must be TAGPR_TOKEN (PAT), not the default GITHUB_TOKEN.
       # actions/checkout configures git credentials from this token; tagpr's
       # internal `git push origin vX.Y.Z` therefore uses the PAT, which
