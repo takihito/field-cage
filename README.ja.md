@@ -1,5 +1,7 @@
 # field-cage
 
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/takihito/field-cage/badge)](https://securityscorecards.dev/viewer/?uri=github.com/takihito/field-cage)
+
 GitHub Actions ランナー上の外部通信を監視・制限する軽量 eBPF エージェント。
 ビルド中の不正なデータ送出や外部コード取得といったサプライチェーン攻撃を検出・防御します。
 
