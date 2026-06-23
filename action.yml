@@ -52,6 +52,7 @@ runs:
         # Use RUNNER_TEMP (exec-safe on GitHub-hosted runners) when available;
         # fall back to /tmp for local testing.
         tmp="$(mktemp -d -p "${RUNNER_TEMP:-/tmp}")"
+        trap 'rm -rf "${tmp}"' EXIT
 
         # Step 1: download checksums.txt and its cosign signature artifacts.
         echo "field-cage: downloading checksums (${FC_VERSION})"

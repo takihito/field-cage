@@ -68,7 +68,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
         run: |
-          gh release upload "${TAG}" \
+          gh release upload --clobber "${TAG}" \
             dist/checksums.txt.sig \
             dist/checksums.txt.pem
 
