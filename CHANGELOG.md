@@ -2,6 +2,24 @@
 
 Release notes are maintained automatically by [tagpr](https://github.com/Songmu/tagpr).
 
+## [v0.0.3](https://github.com/takihito/field-cage/compare/v0.0.2...v0.0.3) - 2026-06-23
+
+- Add SKIP(dns)/SKIP(loopback) verdicts and connect_ms timing by @takihito in https://github.com/takihito/field-cage/pull/13
+- Refactor: extract verdict logic, split DNS files, testable main, cleanup-stack loader by @takihito in https://github.com/takihito/field-cage/pull/15
+- Add SECURITY.md with vulnerability reporting policy by @takihito in https://github.com/takihito/field-cage/pull/27
+- Add dependabot.yml and enable Dependabot security updates by @takihito in https://github.com/takihito/field-cage/pull/28
+- Bump goreleaser/goreleaser-action from 6 to 7 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/29
+- Bump actions/setup-go from 5 to 6 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/30
+- Bump golang.org/x/sys from 0.15.0 to 0.46.0 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/31
+- Fix CI: use go-version-file and bump Dockerfile to Go 1.25 by @takihito in https://github.com/takihito/field-cage/pull/33
+- Bump github.com/cilium/ebpf from 0.14.0 to 0.21.0 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/32
+- Pin GitHub Actions to commit hashes and add explicit permissions by @takihito in https://github.com/takihito/field-cage/pull/34
+- Add dependency-review-action to PR checks by @takihito in https://github.com/takihito/field-cage/pull/35
+- Add CodeQL workflow for Go static analysis by @takihito in https://github.com/takihito/field-cage/pull/36
+- Add step-security/harden-runner to all workflows (#21) by @takihito in https://github.com/takihito/field-cage/pull/37
+- Add OpenSSF Scorecard workflow and README badge (#24) by @takihito in https://github.com/takihito/field-cage/pull/38
+- Add cosign signing and SLSA Level 3 provenance to release workflow by @takihito in https://github.com/takihito/field-cage/pull/39
+
 ## [v0.0.2](https://github.com/takihito/field-cage/compare/v0.0.1...v0.0.2) - 2026-06-11
 
 - Add inline allowlist input to composite action by @takihito in https://github.com/takihito/field-cage/pull/11
