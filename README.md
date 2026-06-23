@@ -110,6 +110,32 @@ GitHub Releases by [GoReleaser](https://goreleaser.com). Versioning is managed
 by [tagpr](https://github.com/Songmu/tagpr): merging the auto-maintained
 release PR pushes a `vX.Y.Z` tag, which triggers the release build.
 
+Each release includes a [cosign](https://github.com/sigstore/cosign) keyless
+signature (`checksums.txt.sig` / `checksums.txt.pem`) and a
+[SLSA Level 3](https://slsa.dev/spec/v1.0/levels) provenance attestation
+(`checksums.txt.intoto.jsonl`), both published as release assets.
+
+**Verify the checksum signature:**
+
+```sh
+cosign verify-blob \
+  --signature checksums.txt.sig \
+  --certificate checksums.txt.pem \
+  --certificate-identity "https://github.com/takihito/field-cage/.github/workflows/release.yml@refs/tags/vX.Y.Z" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  checksums.txt
+```
+
+**Verify SLSA provenance:**
+
+```sh
+slsa-verifier verify-artifact \
+  --provenance-path checksums.txt.intoto.jsonl \
+  --source-uri github.com/takihito/field-cage \
+  --source-tag vX.Y.Z \
+  field-cage_linux_amd64   # or field-cage_linux_arm64
+```
+
 > Maintainer note: tagpr must push the tag with a PAT (repo scope) stored as the
 > `TAGPR_TOKEN` secret — a tag pushed by the default `GITHUB_TOKEN` would not
 > trigger the release workflow.

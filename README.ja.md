@@ -111,6 +111,32 @@ Composite Action でランナー上に field-cage を起動できます。指定
 バージョン管理は [tagpr](https://github.com/Songmu/tagpr) が担い、自動メンテされる
 リリースPRをマージすると `vX.Y.Z` タグが push され、リリースビルドが起動します。
 
+各リリースには [cosign](https://github.com/sigstore/cosign) によるキーレス署名
+（`checksums.txt.sig` / `checksums.txt.pem`）と
+[SLSA Level 3](https://slsa.dev/spec/v1.0/levels) 来歴証明
+（`checksums.txt.intoto.jsonl`）がリリースアセットとして同梱されます。
+
+**チェックサムの署名を検証する:**
+
+```sh
+cosign verify-blob \
+  --signature checksums.txt.sig \
+  --certificate checksums.txt.pem \
+  --certificate-identity "https://github.com/takihito/field-cage/.github/workflows/release.yml@refs/tags/vX.Y.Z" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+  checksums.txt
+```
+
+**SLSA 来歴証明を検証する:**
+
+```sh
+slsa-verifier verify-artifact \
+  --provenance-path checksums.txt.intoto.jsonl \
+  --source-uri github.com/takihito/field-cage \
+  --source-tag vX.Y.Z \
+  field-cage_linux_amd64   # または field-cage_linux_arm64
+```
+
 > メンテナ向け注記: tagpr は PAT（repo スコープ、secret `TAGPR_TOKEN`）でタグを push する
 > 必要があります。デフォルトの `GITHUB_TOKEN` で push したタグはリリースワークフローを
 > 発火させないためです。

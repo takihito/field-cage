@@ -52,10 +52,31 @@ runs:
         # Use RUNNER_TEMP (exec-safe on GitHub-hosted runners) when available;
         # fall back to /tmp for local testing.
         tmp="$(mktemp -d -p "${RUNNER_TEMP:-/tmp}")"
+        trap 'rm -rf "${tmp}"' EXIT
+
+        # Step 1: download checksums.txt and its cosign signature artifacts.
+        echo "field-cage: downloading checksums (${FC_VERSION})"
+        curl -fsSL "${base}/checksums.txt"     -o "${tmp}/checksums.txt"
+        curl -fsSL "${base}/checksums.txt.sig" -o "${tmp}/checksums.txt.sig"
+        curl -fsSL "${base}/checksums.txt.pem" -o "${tmp}/checksums.txt.pem"
+
+        # Step 2: verify checksums.txt was signed by the release workflow via
+        # Sigstore keyless signing (cosign is pre-installed on GitHub-hosted runners).
+        if ! command -v cosign &>/dev/null; then
+          echo "::error::cosign not found. field-cage requires cosign to verify release signatures." >&2
+          exit 1
+        fi
+        echo "field-cage: verifying cosign signature on checksums.txt"
+        cosign verify-blob \
+          --signature "${tmp}/checksums.txt.sig" \
+          --certificate "${tmp}/checksums.txt.pem" \
+          --certificate-identity "https://github.com/takihito/field-cage/.github/workflows/release.yml@refs/tags/${FC_VERSION}" \
+          --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+          "${tmp}/checksums.txt"
+
+        # Step 3: now that checksums.txt is trusted, download and verify the binary.
         echo "field-cage: downloading ${bin} (${FC_VERSION})"
         curl -fsSL "${base}/${bin}" -o "${tmp}/${bin}"
-        curl -fsSL "${base}/checksums.txt" -o "${tmp}/checksums.txt"
-        # Verify the downloaded binary against the published checksum.
         ( cd "${tmp}" && grep " ${bin}\$" checksums.txt | sha256sum -c - )
         chmod +x "${tmp}/${bin}"
         echo "FC_BIN=${tmp}/${bin}" >> "$GITHUB_ENV"
