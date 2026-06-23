@@ -64,12 +64,13 @@ jobs:
             dist/checksums.txt
 
       - name: Upload cosign signature and certificate to release
-        run: |
-          gh release upload "${{ github.ref_name }}" \
-            dist/checksums.txt.sig \
-            dist/checksums.txt.pem
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release upload "${TAG}" \
+            dist/checksums.txt.sig \
+            dist/checksums.txt.pem
 
       - name: Generate base64-encoded subjects for SLSA
         id: hash
@@ -89,4 +90,5 @@ jobs:
     uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
     with:
       base64-subjects: "${{ needs.goreleaser.outputs.hashes }}"
+      provenance-name: "checksums.txt.intoto.jsonl"
       upload-assets: true
