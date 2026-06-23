@@ -111,8 +111,8 @@ Composite Action でランナー上に field-cage を起動できます。指定
 バージョン管理は [tagpr](https://github.com/Songmu/tagpr) が担い、自動メンテされる
 リリースPRをマージすると `vX.Y.Z` タグが push され、リリースビルドが起動します。
 
-各リリースには [cosign](https://github.com/sigstore/cosign) によるキーレス署名
-（`checksums.txt.sig` / `checksums.txt.pem`）と
+各リリースには [cosign](https://github.com/sigstore/cosign) によるキーレス署名バンドル
+（`checksums.txt.bundle`）と
 [SLSA Level 3](https://slsa.dev/spec/v1.0/levels) 来歴証明
 （`checksums.txt.intoto.jsonl`）がリリースアセットとして同梱されます。
 
@@ -120,8 +120,7 @@ Composite Action でランナー上に field-cage を起動できます。指定
 
 ```sh
 cosign verify-blob \
-  --signature checksums.txt.sig \
-  --certificate checksums.txt.pem \
+  --bundle checksums.txt.bundle \
   --certificate-identity "https://github.com/takihito/field-cage/.github/workflows/release.yml@refs/tags/vX.Y.Z" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
   checksums.txt

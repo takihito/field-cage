@@ -54,11 +54,10 @@ runs:
         tmp="$(mktemp -d -p "${RUNNER_TEMP:-/tmp}")"
         trap 'rm -rf "${tmp}"' EXIT
 
-        # Step 1: download checksums.txt and its cosign signature artifacts.
+        # Step 1: download checksums.txt and its cosign bundle.
         echo "field-cage: downloading checksums (${FC_VERSION})"
-        curl -fsSL "${base}/checksums.txt"     -o "${tmp}/checksums.txt"
-        curl -fsSL "${base}/checksums.txt.sig" -o "${tmp}/checksums.txt.sig"
-        curl -fsSL "${base}/checksums.txt.pem" -o "${tmp}/checksums.txt.pem"
+        curl -fsSL "${base}/checksums.txt"        -o "${tmp}/checksums.txt"
+        curl -fsSL "${base}/checksums.txt.bundle" -o "${tmp}/checksums.txt.bundle"
 
         # Step 2: verify checksums.txt was signed by the release workflow via
         # Sigstore keyless signing (cosign is pre-installed on GitHub-hosted runners).
@@ -68,8 +67,7 @@ runs:
         fi
         echo "field-cage: verifying cosign signature on checksums.txt"
         cosign verify-blob \
-          --signature "${tmp}/checksums.txt.sig" \
-          --certificate "${tmp}/checksums.txt.pem" \
+          --bundle "${tmp}/checksums.txt.bundle" \
           --certificate-identity "https://github.com/takihito/field-cage/.github/workflows/release.yml@refs/tags/${FC_VERSION}" \
           --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
           "${tmp}/checksums.txt"
