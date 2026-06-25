@@ -111,7 +111,7 @@ by [tagpr](https://github.com/Songmu/tagpr): merging the auto-maintained
 release PR pushes a `vX.Y.Z` tag, which triggers the release build.
 
 Each release includes a [cosign](https://github.com/sigstore/cosign) keyless
-signature (`checksums.txt.sig` / `checksums.txt.pem`) and a
+signature bundle (`checksums.txt.bundle`) and a
 [SLSA Level 3](https://slsa.dev/spec/v1.0/levels) provenance attestation
 (`checksums.txt.intoto.jsonl`), both published as release assets.
 
@@ -119,8 +119,7 @@ signature (`checksums.txt.sig` / `checksums.txt.pem`) and a
 
 ```sh
 cosign verify-blob \
-  --signature checksums.txt.sig \
-  --certificate checksums.txt.pem \
+  --bundle checksums.txt.bundle \
   --certificate-identity "https://github.com/takihito/field-cage/.github/workflows/release.yml@refs/tags/vX.Y.Z" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
   checksums.txt
