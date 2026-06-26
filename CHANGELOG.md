@@ -2,6 +2,10 @@
 
 Release notes are maintained automatically by [tagpr](https://github.com/Songmu/tagpr).
 
+## [v0.0.5](https://github.com/takihito/field-cage/compare/v0.0.4...v0.0.5) - 2026-06-26
+
+- Fix: install cosign in composite action (do not assume pre-installed) by @takihito in https://github.com/takihito/field-cage/pull/46
+
 ## [v0.0.4](https://github.com/takihito/field-cage/compare/v0.0.3...v0.0.4) - 2026-06-26
 
 - Fix cosign: migrate to --bundle format (cosign v3 compatibility) by @takihito in https://github.com/takihito/field-cage/pull/40
