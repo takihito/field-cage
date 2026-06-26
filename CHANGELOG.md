@@ -2,6 +2,10 @@
 
 Release notes are maintained automatically by [tagpr](https://github.com/Songmu/tagpr).
 
+## [v0.0.6](https://github.com/takihito/field-cage/compare/v0.0.5...v0.0.6) - 2026-06-26
+
+- fix: remove EXIT trap that deleted binary before agent start by @takihito in https://github.com/takihito/field-cage/pull/48
+
 ## [v0.0.5](https://github.com/takihito/field-cage/compare/v0.0.4...v0.0.5) - 2026-06-26
 
 - Fix: install cosign in composite action (do not assume pre-installed) by @takihito in https://github.com/takihito/field-cage/pull/46
