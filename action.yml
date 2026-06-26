@@ -55,7 +55,9 @@ runs:
         # Use RUNNER_TEMP (exec-safe on GitHub-hosted runners) when available;
         # fall back to /tmp for local testing.
         tmp="$(mktemp -d -p "${RUNNER_TEMP:-/tmp}")"
-        trap 'rm -rf "${tmp}"' EXIT
+        # No EXIT trap: the binary in ${tmp} must survive until the
+        # "Start field-cage agent" step. RUNNER_TEMP is cleaned up by
+        # the runner at the end of the job.
 
         # Step 1: download checksums.txt and its cosign bundle.
         echo "field-cage: downloading checksums (${FC_VERSION})"
