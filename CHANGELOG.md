@@ -2,6 +2,11 @@
 
 Release notes are maintained automatically by [tagpr](https://github.com/Songmu/tagpr).
 
+## [v0.0.4](https://github.com/takihito/field-cage/compare/v0.0.3...v0.0.4) - 2026-06-26
+
+- Fix cosign: migrate to --bundle format (cosign v3 compatibility) by @takihito in https://github.com/takihito/field-cage/pull/40
+- Bump actions/checkout from 6.0.3 to 7.0.0 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/41
+
 ## [v0.0.3](https://github.com/takihito/field-cage/compare/v0.0.2...v0.0.3) - 2026-06-23
 
 - Add SKIP(dns)/SKIP(loopback) verdicts and connect_ms timing by @takihito in https://github.com/takihito/field-cage/pull/13
