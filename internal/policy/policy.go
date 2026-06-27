@@ -61,7 +61,14 @@ func newEngine(cfg Config) (*Engine, error) {
 		if ip := net.ParseIP(entry); ip != nil {
 			e.allowedIP[ip.String()] = struct{}{} // canonicalize to prevent representation mismatches
 		} else {
-			e.domains[strings.ToLower(entry)] = struct{}{}
+			// Strip an optional port suffix (e.g. "kayac.com:443" → "kayac.com").
+			// Ports are not part of DNS names and field-cage does not enforce
+			// per-port policy, so the port is silently ignored.
+			host := entry
+			if h, _, err := net.SplitHostPort(entry); err == nil {
+				host = h
+			}
+			e.domains[strings.ToLower(host)] = struct{}{}
 		}
 	}
 	return e, nil

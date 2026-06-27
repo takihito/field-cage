@@ -4,6 +4,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -92,6 +93,35 @@ func TestIPCanonicalization(t *testing.T) {
 	}
 	if !e.Allow("", net.ParseIP("1.2.3.4")) {
 		t.Error("expected 1.2.3.4 to be allowed after whitespace trim")
+	}
+}
+
+func TestDomainWithPortStripped(t *testing.T) {
+	// Allowlist entries like "kayac.com:443" must be normalised to "kayac.com".
+	// Ports are not part of DNS names; keeping them broke seed resolution and
+	// domain matching (IsAllowedDomain("kayac.com") returned false).
+	cfg := Config{
+		Mode:      ModeBlock,
+		Allowlist: []string{"kayac.com:443", "api.github.com:443"},
+	}
+	e, err := newEngine(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// IsAllowedDomain must match without the port.
+	if !e.IsAllowedDomain("kayac.com") {
+		t.Error("IsAllowedDomain(kayac.com) = false, want true")
+	}
+	if !e.IsAllowedDomain("api.github.com") {
+		t.Error("IsAllowedDomain(api.github.com) = false, want true")
+	}
+
+	// Domains() must return plain hostnames so seed resolution succeeds.
+	for _, d := range e.Domains() {
+		if strings.Contains(d, ":") {
+			t.Errorf("Domains() returned %q — port was not stripped", d)
+		}
 	}
 }
 
