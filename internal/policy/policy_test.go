@@ -100,9 +100,10 @@ func TestDomainWithPortStripped(t *testing.T) {
 	// Allowlist entries like "kayac.com:443" must be normalised to "kayac.com".
 	// Ports are not part of DNS names; keeping them broke seed resolution and
 	// domain matching (IsAllowedDomain("kayac.com") returned false).
+	// "203.0.113.10:443" must be normalised to an IP entry, not a domain entry.
 	cfg := Config{
 		Mode:      ModeBlock,
-		Allowlist: []string{"kayac.com:443", "api.github.com:443"},
+		Allowlist: []string{"kayac.com:443", "api.github.com:443", "203.0.113.10:443"},
 	}
 	e, err := newEngine(cfg)
 	if err != nil {
@@ -115,6 +116,14 @@ func TestDomainWithPortStripped(t *testing.T) {
 	}
 	if !e.IsAllowedDomain("api.github.com") {
 		t.Error("IsAllowedDomain(api.github.com) = false, want true")
+	}
+
+	// IP with port must end up in allowedIP, not domains.
+	if !e.Allow("", net.ParseIP("203.0.113.10")) {
+		t.Error("Allow(\"\", 203.0.113.10) = false, want true (IP with port not in allowedIP)")
+	}
+	if e.IsAllowedDomain("203.0.113.10") {
+		t.Error("IsAllowedDomain(203.0.113.10) = true, want false (IP must not be stored as domain)")
 	}
 
 	// Domains() must return plain hostnames so seed resolution succeeds.
