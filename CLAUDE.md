@@ -30,7 +30,7 @@ Key goals:
 
 ### eBPF component (C)
 - `tracepoint/syscalls/sys_enter_connect` — hooks outbound connection attempts (portable across kernel versions and architectures; prefer over `kprobe/sys_connect` which is symbol-name-dependent). Also stores `bpf_ktime_get_ns()` in a `pending_connects` hash map keyed by `pid_tgid` (`u64`: upper 32 bits = tgid, lower 32 bits = pid) for connect-time measurement.
-- `tracepoint/syscalls/sys_exit_connect` — paired with `sys_enter_connect`; looks up the stored timestamp by `pid_tgid`, computes elapsed nanoseconds, and emits the event with `connect_ns` so the Go agent can report `connect_ms` per connection.
+- `tracepoint/syscalls/sys_exit_connect` — paired with `sys_enter_connect`; looks up the stored timestamp by `pid_tgid` and computes elapsed nanoseconds (`connect_ns`). This value is not currently logged because non-blocking sockets return EINPROGRESS in nanoseconds (rounds to 0ms).
 - `socket_filter` on port 53 — sniffs DNS packets to build IP→domain mapping
 - `cgroup/connect4` — in Block mode, enforces a default-deny allowlist: returns `0` (which makes the kernel fail the `connect()` with `EPERM`) for any destination not in the `allowed_ips` map. DNS (port 53) and loopback are always permitted. (An earlier design considered `bpf_override_return` on the connect tracepoint; `cgroup/connect4` was chosen instead because it enforces synchronously before the connection is made, closing the first-connection gap.)
 
@@ -38,7 +38,7 @@ Key goals:
 - **eBPF Loader** — loads compiled eBPF programs into the kernel using `cilium/ebpf`
 - **DNS Cache** — in-memory map resolving IP addresses to domain names from eBPF events
 - **Policy Engine** — matches live traffic against YAML allowlist (exact domain match only, case-insensitive)
-- **Reporter** — writes structured logs to stdout (GitHub Actions format) or a file. Log format: `verdict=<V> pid=<P> tgid=<T> comm=<C> dst=<domain> (<ip>):<port> connect_ms=<ms>`. Verdict values: `ALLOW`, `DENY(no-domain)`, `DENY(not-in-policy)`, `SKIP(dns)`, `SKIP(loopback)`.
+- **Reporter** — writes structured logs to stdout (GitHub Actions format) or a file. Log format: `verdict=<V> pid=<P> tgid=<T> comm=<C> dst=<domain> (<ip>):<port>`. Verdict values: `ALLOW`, `DENY(no-domain)`, `DENY(not-in-policy)`, `SKIP(dns)`, `SKIP(loopback)`.
 
 ### GitHub Action
 - Implemented as a Composite Action (`action.yml`), no TypeScript
@@ -89,4 +89,4 @@ Development milestones
 2. DNS resolution: map IPs to domain names from DNS sniffing ✅
 3. Enforcement: block unauthorized IPs via `cgroup/connect4` ✅
 4. GitHub Action: write `action.yml` and test in a real workflow ✅ (v0.0.2)
-5. Log quality: `SKIP(dns)` / `SKIP(loopback)` verdicts; `connect_ms` per-connection TCP timing
+5. Log quality: `SKIP(dns)` / `SKIP(loopback)` verdicts ✅; TCP connection timing (connect_ns is captured but not logged; pending decision on display format)

@@ -9,15 +9,12 @@ import (
 
 // Event represents a captured outbound IPv4 connection attempt.
 type Event struct {
-	PID       uint32
-	TGID      uint32
-	DPort     uint16
-	DAddr     net.IP
-	Comm      string
-	Domain    string // resolved domain name, empty if not yet in DNS cache
-	ConnectMs uint32 // connect() syscall duration in milliseconds; 0 for non-blocking
-	// sockets that return EINPROGRESS immediately. Also covers UDP connect() which
-	// just sets the default destination and returns instantly.
+	PID    uint32
+	TGID   uint32
+	DPort  uint16
+	DAddr  net.IP
+	Comm   string
+	Domain string // resolved domain name, empty if not yet in DNS cache
 }
 
 // connectEvent mirrors the C struct event layout for binary deserialization.
@@ -37,12 +34,11 @@ func parseEvent(data []byte) (*Event, error) {
 		return nil, fmt.Errorf("parse event: %w", err)
 	}
 	return &Event{
-		PID:       raw.Pid,
-		TGID:      raw.Tgid,
-		DPort:     raw.Dport,
-		DAddr:     net.IP(raw.Daddr[:]),
-		Comm:      nullTerminatedString(raw.Comm[:]),
-		ConnectMs: uint32(raw.ConnectNs / 1_000_000),
+		PID:   raw.Pid,
+		TGID:  raw.Tgid,
+		DPort: raw.Dport,
+		DAddr: net.IP(raw.Daddr[:]),
+		Comm:  nullTerminatedString(raw.Comm[:]),
 	}, nil
 }
 

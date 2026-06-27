@@ -141,13 +141,12 @@ func run(configPath, flagMode string) error {
 
 			verdict := report.VerdictFor(ev.DPort, ev.DAddr, ev.Domain, allower)
 			fmt.Println(report.Line{
-				Verdict:   verdict,
-				PID:       ev.PID,
-				TGID:      ev.TGID,
-				Comm:      ev.Comm,
-				Dst:       report.Dst(ev.Domain, ev.DAddr),
-				DPort:     ev.DPort,
-				ConnectMs: ev.ConnectMs,
+				Verdict: verdict,
+				PID:     ev.PID,
+				TGID:    ev.TGID,
+				Comm:    ev.Comm,
+				Dst:     report.Dst(ev.Domain, ev.DAddr),
+				DPort:   ev.DPort,
 			})
 		}
 	}()

@@ -82,20 +82,20 @@ func TestLineString(t *testing.T) {
 		{
 			"allow with domain",
 			Line{Verdict: VerdictAllow, PID: 1234, TGID: 1234, Comm: "curl",
-				Dst: "api.github.com (140.82.121.4)", DPort: 443, ConnectMs: 23},
-			"verdict=ALLOW                pid=1234   tgid=1234   comm=curl             dst=api.github.com (140.82.121.4):443 connect_ms=23",
+				Dst: "api.github.com (140.82.121.4)", DPort: 443},
+			"verdict=ALLOW                pid=1234   tgid=1234   comm=curl             dst=api.github.com (140.82.121.4):443",
 		},
 		{
 			"deny without domain",
 			Line{Verdict: VerdictDenyNoDomain, PID: 7, TGID: 7, Comm: "wget",
-				Dst: "93.184.216.34", DPort: 80, ConnectMs: 0},
-			"verdict=DENY(no-domain)      pid=7      tgid=7      comm=wget             dst=93.184.216.34:80 connect_ms=0",
+				Dst: "93.184.216.34", DPort: 80},
+			"verdict=DENY(no-domain)      pid=7      tgid=7      comm=wget             dst=93.184.216.34:80",
 		},
 		{
 			"skip dns",
 			Line{Verdict: VerdictSkipDNS, PID: 99, TGID: 99, Comm: "systemd-resolve",
-				Dst: "127.0.0.53", DPort: 53, ConnectMs: 0},
-			"verdict=SKIP(dns)            pid=99     tgid=99     comm=systemd-resolve  dst=127.0.0.53:53 connect_ms=0",
+				Dst: "127.0.0.53", DPort: 53},
+			"verdict=SKIP(dns)            pid=99     tgid=99     comm=systemd-resolve  dst=127.0.0.53:53",
 		},
 	}
 	for _, tc := range cases {
