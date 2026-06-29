@@ -61,7 +61,24 @@ func newEngine(cfg Config) (*Engine, error) {
 		if ip := net.ParseIP(entry); ip != nil {
 			e.allowedIP[ip.String()] = struct{}{} // canonicalize to prevent representation mismatches
 		} else {
-			e.domains[strings.ToLower(entry)] = struct{}{}
+			// Strip an optional port suffix (e.g. "kayac.com:443" → "kayac.com",
+			// "203.0.113.10:443" → "203.0.113.10"). Ports are not part of DNS
+			// names and field-cage does not enforce per-port policy.
+			host := entry
+			if h, _, err := net.SplitHostPort(entry); err == nil {
+				host = h
+			}
+			if host == "" {
+				// Malformed entry (e.g. ":443") — skip silently.
+				continue
+			}
+			// Re-parse: "203.0.113.10:443" strips to an IP and must go to
+			// allowedIP, not domains.
+			if ip := net.ParseIP(host); ip != nil {
+				e.allowedIP[ip.String()] = struct{}{}
+			} else {
+				e.domains[strings.ToLower(host)] = struct{}{}
+			}
 		}
 	}
 	return e, nil

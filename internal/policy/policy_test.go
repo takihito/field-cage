@@ -4,6 +4,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -92,6 +93,64 @@ func TestIPCanonicalization(t *testing.T) {
 	}
 	if !e.Allow("", net.ParseIP("1.2.3.4")) {
 		t.Error("expected 1.2.3.4 to be allowed after whitespace trim")
+	}
+}
+
+func TestDomainWithPortStripped(t *testing.T) {
+	// Allowlist entries like "kayac.com:443" must be normalised to "kayac.com".
+	// Ports are not part of DNS names; keeping them broke seed resolution and
+	// domain matching (IsAllowedDomain("kayac.com") returned false).
+	// "203.0.113.10:443" must be normalised to an IP entry, not a domain entry.
+	cfg := Config{
+		Mode:      ModeBlock,
+		Allowlist: []string{"kayac.com:443", "api.github.com:443", "203.0.113.10:443"},
+	}
+	e, err := newEngine(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// IsAllowedDomain must match without the port.
+	if !e.IsAllowedDomain("kayac.com") {
+		t.Error("IsAllowedDomain(kayac.com) = false, want true")
+	}
+	if !e.IsAllowedDomain("api.github.com") {
+		t.Error("IsAllowedDomain(api.github.com) = false, want true")
+	}
+
+	// IP with port must end up in allowedIP, not domains.
+	if !e.Allow("", net.ParseIP("203.0.113.10")) {
+		t.Error("Allow(\"\", 203.0.113.10) = false, want true (IP with port not in allowedIP)")
+	}
+	if e.IsAllowedDomain("203.0.113.10") {
+		t.Error("IsAllowedDomain(203.0.113.10) = true, want false (IP must not be stored as domain)")
+	}
+
+	// Domains() must return plain hostnames so seed resolution succeeds.
+	for _, d := range e.Domains() {
+		if strings.Contains(d, ":") {
+			t.Errorf("Domains() returned %q — port was not stripped", d)
+		}
+	}
+}
+
+func TestMalformedPortOnlyEntry(t *testing.T) {
+	// ":443" splits to host="" via SplitHostPort; the empty host must be
+	// silently skipped rather than stored as e.domains[""].
+	cfg := Config{
+		Mode:      ModeBlock,
+		Allowlist: []string{":443", "github.com"},
+	}
+	e, err := newEngine(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.IsAllowedDomain("") {
+		t.Error("IsAllowedDomain(\"\") = true, want false (empty host must not be stored)")
+	}
+	// Only "github.com" should be in domains; ":443" must have been dropped.
+	if got := len(e.Domains()); got != 1 {
+		t.Errorf("Domains() len = %d, want 1; got %v", got, e.Domains())
 	}
 }
 
