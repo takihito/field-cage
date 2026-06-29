@@ -25,7 +25,6 @@ verdict=DENY(not-in-policy)  pid=1235   tgid=1235   comm=python3          dst=su
 verdict=DENY(no-domain)      pid=1236   tgid=1236   comm=curl             dst=93.184.216.34:80
 ```
 
-
 | verdict | 意味 |
 |---------|------|
 | `ALLOW` | ポリシーで許可された接続 |
