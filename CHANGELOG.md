@@ -2,6 +2,12 @@
 
 Release notes are maintained automatically by [tagpr](https://github.com/Songmu/tagpr).
 
+## [v0.0.7](https://github.com/takihito/field-cage/compare/v0.0.6...v0.0.7) - 2026-06-29
+
+- Bump github/codeql-action from 3.36.2 to 4.36.2 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/42
+- fix: strip port suffix from domain entries in allowlist by @takihito in https://github.com/takihito/field-cage/pull/52
+- fix: remove connect_ms from log output by @takihito in https://github.com/takihito/field-cage/pull/51
+
 ## [v0.0.6](https://github.com/takihito/field-cage/compare/v0.0.5...v0.0.6) - 2026-06-26
 
 - fix: remove EXIT trap that deleted binary before agent start by @takihito in https://github.com/takihito/field-cage/pull/48
