@@ -154,6 +154,85 @@ func TestMalformedPortOnlyEntry(t *testing.T) {
 	}
 }
 
+func TestCIDRAllowlist(t *testing.T) {
+	cfg := Config{
+		Mode: ModeBlock,
+		Allowlist: []string{
+			"10.0.0.0/8",         // private range
+			"203.0.113.0/24",     // TEST-NET-3 (RFC 5737)
+			"192.168.100.0/24",   // private /24
+		},
+	}
+	e, err := newEngine(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		ip   string
+		want bool
+	}{
+		// inside 10.0.0.0/8
+		{"10.0.0.1", true},
+		{"10.255.255.255", true},
+		// outside
+		{"11.0.0.1", false},
+		{"9.255.255.255", false},
+		// inside 203.0.113.0/24
+		{"203.0.113.0", true},
+		{"203.0.113.255", true},
+		// outside /24
+		{"203.0.114.0", false},
+		// inside 192.168.100.0/24
+		{"192.168.100.50", true},
+		{"192.168.101.1", false},
+	}
+	for _, tc := range cases {
+		ip := net.ParseIP(tc.ip)
+		if ip == nil {
+			t.Fatalf("bad test IP %q", tc.ip)
+		}
+		if got := e.Allow("", ip); got != tc.want {
+			t.Errorf("Allow(\"\", %q) = %v, want %v", tc.ip, got, tc.want)
+		}
+	}
+
+	// CIDRs() must return all three parsed networks
+	if got := len(e.CIDRs()); got != 3 {
+		t.Errorf("CIDRs() len = %d, want 3", got)
+	}
+
+	// CIDR entries must not appear as plain domains or IPs
+	if e.IsAllowedDomain("10.0.0.0/8") {
+		t.Error("CIDR must not be stored as a domain")
+	}
+}
+
+func TestCIDRDoesNotMatchDomain(t *testing.T) {
+	// A domain alongside a CIDR: the domain must still be required for domain
+	// matching; an IP outside the CIDR must not sneak through via domain.
+	cfg := Config{
+		Mode:      ModeBlock,
+		Allowlist: []string{"10.0.0.0/8", "github.com"},
+	}
+	e, err := newEngine(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// IP in CIDR → allow regardless of domain
+	if !e.Allow("evil.com", net.ParseIP("10.1.2.3")) {
+		t.Error("IP inside CIDR must be allowed even with an unlisted domain")
+	}
+	// IP outside CIDR, matching domain → allow via domain
+	if !e.Allow("github.com", net.ParseIP("140.82.121.4")) {
+		t.Error("listed domain must be allowed even if IP is outside CIDR")
+	}
+	// IP outside CIDR, unlisted domain → deny
+	if e.Allow("evil.com", net.ParseIP("11.0.0.1")) {
+		t.Error("IP outside CIDR with unlisted domain must be denied")
+	}
+}
+
 func TestInvalidMode(t *testing.T) {
 	_, err := newEngine(Config{Mode: "invalid"})
 	if err == nil {

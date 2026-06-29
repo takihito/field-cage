@@ -172,6 +172,11 @@ func seedAllowlist(w *ebpf.Watcher, engine *policy.Engine) {
 			log.Printf("field-cage: seed allowed IP %s: %v", ip, err)
 		}
 	}
+	for _, cidr := range engine.CIDRs() {
+		if err := w.AllowCIDR(cidr); err != nil {
+			log.Printf("field-cage: seed allowed CIDR %s: %v", cidr, err)
+		}
+	}
 	var resolver net.Resolver
 	for _, domain := range engine.Domains() {
 		// "ip4" restricts results to IPv4; IPv6 enforcement is not yet

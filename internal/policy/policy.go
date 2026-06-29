@@ -25,10 +25,12 @@ type Config struct {
 
 // Engine evaluates outbound connections against a policy.
 // Domain matching is exact (case-insensitive). Wildcards are not supported.
+// CIDR ranges (e.g. "10.0.0.0/8") are supported for IPv4 subnets.
 type Engine struct {
 	mode      Mode
 	domains   map[string]struct{}
 	allowedIP map[string]struct{}
+	cidrs     []*net.IPNet
 }
 
 // LoadFile parses a YAML policy file and returns an Engine.
@@ -76,6 +78,10 @@ func newEngine(cfg Config) (*Engine, error) {
 			// allowedIP, not domains.
 			if ip := net.ParseIP(host); ip != nil {
 				e.allowedIP[ip.String()] = struct{}{}
+			} else if _, cidr, err := net.ParseCIDR(host); err == nil && cidr.IP.To4() != nil {
+				// IPv4 CIDR range (e.g. "10.0.0.0/8", "203.0.113.0/24").
+				// net.ParseCIDR masks the address, so cidr.IP is the network address.
+				e.cidrs = append(e.cidrs, cidr)
 			} else {
 				e.domains[strings.ToLower(host)] = struct{}{}
 			}
@@ -109,6 +115,14 @@ func (e *Engine) IPs() []net.IP {
 	return ips
 }
 
+// CIDRs returns the allowlisted IPv4 CIDR ranges. Used to seed the
+// enforcement LPM trie at startup.
+func (e *Engine) CIDRs() []*net.IPNet {
+	out := make([]*net.IPNet, len(e.cidrs))
+	copy(out, e.cidrs)
+	return out
+}
+
 // IsAllowedDomain reports whether the given domain is on the allowlist.
 // Matching is exact and case-insensitive; wildcards are not supported.
 func (e *Engine) IsAllowedDomain(domain string) bool {
@@ -121,12 +135,18 @@ func (e *Engine) IsAllowedDomain(domain string) bool {
 
 // Allow reports whether the given domain and IP are permitted by the policy.
 // Domain matching is exact and case-insensitive; wildcards are not supported.
+// CIDR containment is checked for IPv4 addresses.
 // domain may be empty if DNS resolution has not occurred yet; in that case
 // only the IP is checked.
 func (e *Engine) Allow(domain string, ip net.IP) bool {
 	if ip != nil {
 		if _, ok := e.allowedIP[ip.String()]; ok {
 			return true
+		}
+		for _, cidr := range e.cidrs {
+			if cidr.Contains(ip) {
+				return true
+			}
 		}
 	}
 	if domain != "" {
