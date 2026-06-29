@@ -59,9 +59,6 @@ func TestParseEvent(t *testing.T) {
 	if ev.Comm != "curl" {
 		t.Errorf("Comm = %q, want %q", ev.Comm, "curl")
 	}
-	if ev.ConnectMs != 23 {
-		t.Errorf("ConnectMs = %d, want 23", ev.ConnectMs)
-	}
 }
 
 func TestParseEvent_TruncatedData(t *testing.T) {

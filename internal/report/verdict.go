@@ -72,24 +72,23 @@ func Dst(domain string, daddr net.IP) string {
 
 // Line holds the fields of one per-connection log line.
 type Line struct {
-	Verdict   Verdict
-	PID       uint32
-	TGID      uint32
-	Comm      string
-	Dst       string // pre-formatted destination, see Dst
-	DPort     uint16
-	ConnectMs uint32
+	Verdict Verdict
+	PID     uint32
+	TGID    uint32
+	Comm    string
+	Dst     string // pre-formatted destination, see Dst
+	DPort   uint16
 }
 
 // String renders the log line (without a trailing newline) in the agent's
 // stable output format:
 //
-//	verdict=<V> pid=<P> tgid=<T> comm=<C> dst=<domain> (<ip>):<port> connect_ms=<ms>
-//	verdict=<V> pid=<P> tgid=<T> comm=<C> dst=<ip>:<port> connect_ms=<ms>
+//	verdict=<V> pid=<P> tgid=<T> comm=<C> dst=<domain> (<ip>):<port>
+//	verdict=<V> pid=<P> tgid=<T> comm=<C> dst=<ip>:<port>
 //
 // The dst field uses the two-form format when a domain name is known (via Dst),
 // or the IP-only form when no domain has been resolved yet.
 func (l Line) String() string {
-	return fmt.Sprintf("verdict=%-20s pid=%-6d tgid=%-6d comm=%-16s dst=%s:%d connect_ms=%d",
-		l.Verdict, l.PID, l.TGID, l.Comm, l.Dst, l.DPort, l.ConnectMs)
+	return fmt.Sprintf("verdict=%-20s pid=%-6d tgid=%-6d comm=%-16s dst=%s:%d",
+		l.Verdict, l.PID, l.TGID, l.Comm, l.Dst, l.DPort)
 }
