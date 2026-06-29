@@ -134,6 +134,26 @@ func TestDomainWithPortStripped(t *testing.T) {
 	}
 }
 
+func TestMalformedPortOnlyEntry(t *testing.T) {
+	// ":443" splits to host="" via SplitHostPort; the empty host must be
+	// silently skipped rather than stored as e.domains[""].
+	cfg := Config{
+		Mode:      ModeBlock,
+		Allowlist: []string{":443", "github.com"},
+	}
+	e, err := newEngine(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.IsAllowedDomain("") {
+		t.Error("IsAllowedDomain(\"\") = true, want false (empty host must not be stored)")
+	}
+	// Only "github.com" should be in domains; ":443" must have been dropped.
+	if got := len(e.Domains()); got != 1 {
+		t.Errorf("Domains() len = %d, want 1; got %v", got, e.Domains())
+	}
+}
+
 func TestInvalidMode(t *testing.T) {
 	_, err := newEngine(Config{Mode: "invalid"})
 	if err == nil {
