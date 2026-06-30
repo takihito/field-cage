@@ -160,10 +160,19 @@ func (w *Watcher) attachBlock(cgroupPath string) error {
 	return nil
 }
 
-// AllowIP adds a single IPv4 address to the allowed_ips eBPF map, permitting
-// outbound connections to it under the default-deny enforcement program.
-// This is an O(1) incremental operation. It is a no-op for non-IPv4 addresses
-// or if the watcher was not created with NewBlockWatcher.
+// lpmKey is the key for the LPM trie allowed_ips map.
+// Layout must match the C struct lpm_key in bpf/block.c:
+//
+//	{ __u32 prefixlen; __u8 addr[4]; }
+type lpmKey struct {
+	Prefixlen uint32
+	Addr      [4]byte
+}
+
+// AllowIP adds a single IPv4 address (/32) to the allowed_ips LPM trie,
+// permitting outbound connections to it under the default-deny enforcement
+// program. It is a no-op for non-IPv4 addresses or if the watcher was not
+// created with NewBlockWatcher.
 func (w *Watcher) AllowIP(ip net.IP) error {
 	if w.blockObjs == nil {
 		return nil
@@ -172,11 +181,30 @@ func (w *Watcher) AllowIP(ip net.IP) error {
 	if ip4 == nil {
 		return nil
 	}
-	var key [4]byte
-	copy(key[:], ip4)
+	key := lpmKey{Prefixlen: 32, Addr: [4]byte{ip4[0], ip4[1], ip4[2], ip4[3]}}
 	var val uint8 = 1
 	if err := w.blockObjs.AllowedIps.Put(key, val); err != nil {
 		return fmt.Errorf("add allowed IP %s: %w", ip, err)
+	}
+	return nil
+}
+
+// AllowCIDR adds an IPv4 CIDR range to the allowed_ips LPM trie, permitting
+// all addresses within the subnet. It is a no-op for nil, non-IPv4 networks,
+// or if the watcher was not created with NewBlockWatcher.
+func (w *Watcher) AllowCIDR(cidr *net.IPNet) error {
+	if cidr == nil || w.blockObjs == nil {
+		return nil
+	}
+	ip4 := cidr.IP.To4()
+	if ip4 == nil {
+		return nil // IPv6 not yet supported
+	}
+	ones, _ := cidr.Mask.Size()
+	key := lpmKey{Prefixlen: uint32(ones), Addr: [4]byte{ip4[0], ip4[1], ip4[2], ip4[3]}}
+	var val uint8 = 1
+	if err := w.blockObjs.AllowedIps.Put(key, val); err != nil {
+		return fmt.Errorf("add allowed CIDR %s: %w", cidr, err)
 	}
 	return nil
 }

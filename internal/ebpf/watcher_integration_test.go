@@ -165,3 +165,45 @@ func TestBlockWatcherDefaultDeny(t *testing.T) {
 		t.Fatalf("after AllowIP, connect to %s should not be EPERM, got: %v", target, err)
 	}
 }
+
+// TestBlockWatcherAllowCIDR verifies that AllowCIDR seeds the LPM trie with a
+// subnet prefix: a host address inside the CIDR must no longer be denied by
+// default-deny after the CIDR is seeded.
+// Requires the same privileges as TestBlockWatcherDefaultDeny.
+func TestBlockWatcherAllowCIDR(t *testing.T) {
+	cgroupPath := setupTestCgroup(t)
+	denyAll := func(string) bool { return false }
+	w, err := ebpf.NewBlockWatcher(cgroupPath, denyAll)
+	if err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			t.Skipf("skipping: insufficient privileges (needs CAP_BPF/CAP_NET_RAW/root): %v", err)
+		}
+		t.Fatalf("NewBlockWatcher: %v", err)
+	}
+	defer w.Close()
+
+	// TEST-NET-1 host inside 192.0.2.0/24 — non-routable, so any non-EPERM
+	// error after AllowCIDR indicates the CIDR seeding worked.
+	const target = "192.0.2.2:80"
+
+	// Default-deny: the connection must fail with EPERM before seeding.
+	_, err = net.DialTimeout("tcp4", target, 2*time.Second)
+	if err == nil {
+		t.Fatalf("expected connect to %s to be denied, but it succeeded", target)
+	}
+	if !errors.Is(err, syscall.EPERM) {
+		t.Fatalf("expected EPERM for denied connect to %s, got: %v", target, err)
+	}
+
+	// Seed the containing /24 subnet into the LPM trie.
+	_, cidr, _ := net.ParseCIDR("192.0.2.0/24")
+	if err := w.AllowCIDR(cidr); err != nil {
+		t.Fatalf("AllowCIDR: %v", err)
+	}
+
+	// After seeding the subnet, the host must no longer be EPERM.
+	_, err = net.DialTimeout("tcp4", target, 2*time.Second)
+	if errors.Is(err, syscall.EPERM) {
+		t.Fatalf("after AllowCIDR(192.0.2.0/24), connect to %s must not be EPERM, got: %v", target, err)
+	}
+}
