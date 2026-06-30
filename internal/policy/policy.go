@@ -78,10 +78,15 @@ func newEngine(cfg Config) (*Engine, error) {
 			// allowedIP, not domains.
 			if ip := net.ParseIP(host); ip != nil {
 				e.allowedIP[ip.String()] = struct{}{}
-			} else if _, cidr, err := net.ParseCIDR(host); err == nil && cidr.IP.To4() != nil {
-				// IPv4 CIDR range (e.g. "10.0.0.0/8", "203.0.113.0/24").
-				// net.ParseCIDR masks the address, so cidr.IP is the network address.
-				e.cidrs = append(e.cidrs, cidr)
+			} else if _, cidr, err := net.ParseCIDR(host); err == nil {
+				if cidr.IP.To4() != nil {
+					// IPv4 CIDR range (e.g. "10.0.0.0/8", "203.0.113.0/24").
+					// net.ParseCIDR masks the address, so cidr.IP is the network address.
+					e.cidrs = append(e.cidrs, cidr)
+				}
+				// IPv6 CIDRs (e.g. "2001:db8::/32") are silently skipped — only
+				// IPv4 is enforced. Falling through to the domain branch would
+				// treat them as DNS names and cause spurious resolution failures.
 			} else {
 				e.domains[strings.ToLower(host)] = struct{}{}
 			}

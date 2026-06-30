@@ -208,6 +208,30 @@ func TestCIDRAllowlist(t *testing.T) {
 	}
 }
 
+func TestIPv6CIDRSkipped(t *testing.T) {
+	// IPv6 CIDRs must be silently dropped, not treated as domain names.
+	cfg := Config{
+		Mode:      ModeBlock,
+		Allowlist: []string{"2001:db8::/32", "github.com"},
+	}
+	e, err := newEngine(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// IPv6 CIDR must not appear in domains
+	if e.IsAllowedDomain("2001:db8::/32") {
+		t.Error("IPv6 CIDR must not be stored as a domain name")
+	}
+	// No CIDRs stored (IPv6 is silently skipped)
+	if got := len(e.CIDRs()); got != 0 {
+		t.Errorf("CIDRs() len = %d, want 0 (IPv6 CIDRs are unsupported)", got)
+	}
+	// Only "github.com" in domains
+	if got := len(e.Domains()); got != 1 {
+		t.Errorf("Domains() len = %d, want 1; got %v", got, e.Domains())
+	}
+}
+
 func TestCIDRDoesNotMatchDomain(t *testing.T) {
 	// A domain alongside a CIDR: the domain must still be required for domain
 	// matching; an IP outside the CIDR must not sneak through via domain.

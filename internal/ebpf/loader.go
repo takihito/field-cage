@@ -190,10 +190,10 @@ func (w *Watcher) AllowIP(ip net.IP) error {
 }
 
 // AllowCIDR adds an IPv4 CIDR range to the allowed_ips LPM trie, permitting
-// all addresses within the subnet. It is a no-op for non-IPv4 networks or if
-// the watcher was not created with NewBlockWatcher.
+// all addresses within the subnet. It is a no-op for nil, non-IPv4 networks,
+// or if the watcher was not created with NewBlockWatcher.
 func (w *Watcher) AllowCIDR(cidr *net.IPNet) error {
-	if w.blockObjs == nil {
+	if cidr == nil || w.blockObjs == nil {
 		return nil
 	}
 	ip4 := cidr.IP.To4()
