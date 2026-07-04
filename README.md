@@ -15,6 +15,7 @@ field-cage hooks into the Linux kernel via eBPF to observe every outbound connec
 
 - Automatic IP-to-domain mapping via DNS packet monitoring
 - YAML policy: exact domain and IP matching (case-insensitive)
+- IPv4 CIDR subnet matching (e.g. `10.0.0.0/8`, `203.0.113.0/24`)
 
 ## Log output
 
@@ -40,10 +41,14 @@ allowlist:
   - api.github.com
   - codeload.github.com
   - objects.githubusercontent.com
-  - 1.2.3.4        # raw IP addresses are supported
+  - 1.2.3.4             # single IP address
+  - 10.0.0.0/8          # IPv4 CIDR subnet (private range)
+  - 203.0.113.0/24      # any /N prefix length is supported
 ```
 
 > **Note**: Wildcards (`*.github.com`) are not supported. List each subdomain explicitly.
+>
+> **CIDR**: Only IPv4 CIDRs are supported. A CIDR entry seeds the eBPF LPM trie directly, so all addresses in the subnet are permitted without per-IP DNS resolution.
 
 ## Usage
 
