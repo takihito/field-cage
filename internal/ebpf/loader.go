@@ -19,14 +19,15 @@ import (
 // resolved domain names. When blockObjs is non-nil, AllowIP populates the
 // allowlist enforced by the cgroup/connect4 program (default-deny).
 type Watcher struct {
-	objs       ConnectObjects
-	tp         link.Link // sys_enter_connect
-	tpExit     link.Link // sys_exit_connect
-	reader     *ringbuf.Reader
-	dnsCache   *DNSCache
-	dnsWatcher *dnsWatcher
-	blockObjs  *BlockObjects
-	cgroupLink link.Link
+	objs        ConnectObjects
+	tp          link.Link // sys_enter_connect
+	tpExit      link.Link // sys_exit_connect
+	reader      *ringbuf.Reader
+	dnsCache    *DNSCache
+	dnsWatcher  *dnsWatcher
+	blockObjs   *BlockObjects
+	cgroupLink  link.Link // cgroup/connect4
+	cgroupLink6 link.Link // cgroup/connect6
 }
 
 // NewWatcher loads the eBPF program and attaches it to the tracepoint.
@@ -35,10 +36,11 @@ func NewWatcher() (*Watcher, error) {
 	return newWatcher("", nil)
 }
 
-// NewBlockWatcher is like NewWatcher but also loads the cgroup/connect4
-// enforcement program, which denies every outbound connection by default
-// (allowlist model). Use AllowIP to seed the permitted-IP set; observed DNS
-// responses for domains accepted by isAllowedDomain are added automatically.
+// NewBlockWatcher is like NewWatcher but also loads the cgroup/connect4 and
+// cgroup/connect6 enforcement programs, which deny every outbound connection
+// by default (allowlist model). Use AllowIP to seed the permitted-IP set;
+// observed DNS responses for domains accepted by isAllowedDomain are added
+// automatically.
 // cgroupPath is the path to a writable cgroup v2 directory
 // (e.g. "/sys/fs/cgroup"). isAllowedDomain reports whether a resolved domain is
 // on the allowlist; it may be nil, in which case only seeded IPs are permitted.
@@ -101,7 +103,8 @@ func newWatcher(cgroupPath string, isAllowedDomain func(string) bool) (w *Watche
 			return nil, fmt.Errorf("attach block program: %w", err)
 		}
 		cleanups = append(cleanups, func() {
-			w.cgroupLink.Close() //nolint:errcheck
+			w.cgroupLink6.Close() //nolint:errcheck
+			w.cgroupLink.Close()  //nolint:errcheck
 			w.blockObjs.Close()
 		})
 	}
@@ -137,8 +140,9 @@ func newWatcher(cgroupPath string, isAllowedDomain func(string) bool) (w *Watche
 	return w, nil
 }
 
-// attachBlock loads the cgroup/connect4 eBPF program and attaches it to the
-// given cgroup path so it can block unauthorized connections system-wide.
+// attachBlock loads the cgroup/connect4 and cgroup/connect6 eBPF programs and
+// attaches them to the given cgroup path so they can block unauthorized
+// connections system-wide for both address families.
 func (w *Watcher) attachBlock(cgroupPath string) error {
 	var blockObjs BlockObjects
 	if err := LoadBlockObjects(&blockObjs, nil); err != nil {
@@ -155,12 +159,24 @@ func (w *Watcher) attachBlock(cgroupPath string) error {
 		return fmt.Errorf("attach cgroup/connect4: %w", err)
 	}
 
+	cg6, err := link.AttachCgroup(link.CgroupOptions{
+		Path:    cgroupPath,
+		Attach:  ciliumebpf.AttachCGroupInet6Connect,
+		Program: blockObjs.BlockConnect6,
+	})
+	if err != nil {
+		cg.Close() //nolint:errcheck
+		blockObjs.Close()
+		return fmt.Errorf("attach cgroup/connect6: %w", err)
+	}
+
 	w.blockObjs = &blockObjs
 	w.cgroupLink = cg
+	w.cgroupLink6 = cg6
 	return nil
 }
 
-// lpmKey is the key for the LPM trie allowed_ips map.
+// lpmKey is the key for the IPv4 allowed_ips LPM trie.
 // Layout must match the C struct lpm_key in bpf/block.c:
 //
 //	{ __u32 prefixlen; __u8 addr[4]; }
@@ -169,42 +185,72 @@ type lpmKey struct {
 	Addr      [4]byte
 }
 
-// AllowIP adds a single IPv4 address (/32) to the allowed_ips LPM trie,
-// permitting outbound connections to it under the default-deny enforcement
-// program. It is a no-op for non-IPv4 addresses or if the watcher was not
-// created with NewBlockWatcher.
+// lpmKey6 is the key for the IPv6 allowed_ips6 LPM trie.
+// Layout must match the C struct lpm_key6 in bpf/block.c:
+//
+//	{ __u32 prefixlen; __u8 addr[16]; }
+type lpmKey6 struct {
+	Prefixlen uint32
+	Addr      [16]byte
+}
+
+// AllowIP adds a single IP address (/32 or /128) to the enforcement LPM trie
+// for its address family, permitting outbound connections to it under the
+// default-deny enforcement program. IPv4 addresses (including IPv4-mapped
+// IPv6) go to the IPv4 trie — the connect6 program consults it for
+// IPv4-mapped destinations, so one entry covers both socket families. It is a
+// no-op for nil/invalid addresses or if the watcher was not created with
+// NewBlockWatcher.
 func (w *Watcher) AllowIP(ip net.IP) error {
-	if w.blockObjs == nil {
+	if w.blockObjs == nil || ip == nil {
 		return nil
 	}
-	ip4 := ip.To4()
-	if ip4 == nil {
+	if ip4 := ip.To4(); ip4 != nil {
+		key := lpmKey{Prefixlen: 32, Addr: [4]byte{ip4[0], ip4[1], ip4[2], ip4[3]}}
+		var val uint8 = 1
+		if err := w.blockObjs.AllowedIps.Put(key, val); err != nil {
+			return fmt.Errorf("add allowed IP %s: %w", ip, err)
+		}
 		return nil
 	}
-	key := lpmKey{Prefixlen: 32, Addr: [4]byte{ip4[0], ip4[1], ip4[2], ip4[3]}}
+	ip16 := ip.To16()
+	if ip16 == nil {
+		return nil
+	}
+	key := lpmKey6{Prefixlen: 128}
+	copy(key.Addr[:], ip16)
 	var val uint8 = 1
-	if err := w.blockObjs.AllowedIps.Put(key, val); err != nil {
-		return fmt.Errorf("add allowed IP %s: %w", ip, err)
+	if err := w.blockObjs.AllowedIps6.Put(key, val); err != nil {
+		return fmt.Errorf("add allowed IPv6 %s: %w", ip, err)
 	}
 	return nil
 }
 
-// AllowCIDR adds an IPv4 CIDR range to the allowed_ips LPM trie, permitting
-// all addresses within the subnet. It is a no-op for nil, non-IPv4 networks,
-// or if the watcher was not created with NewBlockWatcher.
+// AllowCIDR adds a CIDR range to the enforcement LPM trie for its address
+// family, permitting all addresses within the subnet. It is a no-op for nil
+// networks or if the watcher was not created with NewBlockWatcher.
 func (w *Watcher) AllowCIDR(cidr *net.IPNet) error {
 	if cidr == nil || w.blockObjs == nil {
 		return nil
 	}
-	ip4 := cidr.IP.To4()
-	if ip4 == nil {
-		return nil // IPv6 not yet supported
-	}
 	ones, _ := cidr.Mask.Size()
-	key := lpmKey{Prefixlen: uint32(ones), Addr: [4]byte{ip4[0], ip4[1], ip4[2], ip4[3]}}
+	if ip4 := cidr.IP.To4(); ip4 != nil {
+		key := lpmKey{Prefixlen: uint32(ones), Addr: [4]byte{ip4[0], ip4[1], ip4[2], ip4[3]}}
+		var val uint8 = 1
+		if err := w.blockObjs.AllowedIps.Put(key, val); err != nil {
+			return fmt.Errorf("add allowed CIDR %s: %w", cidr, err)
+		}
+		return nil
+	}
+	ip16 := cidr.IP.To16()
+	if ip16 == nil {
+		return nil
+	}
+	key := lpmKey6{Prefixlen: uint32(ones)}
+	copy(key.Addr[:], ip16)
 	var val uint8 = 1
-	if err := w.blockObjs.AllowedIps.Put(key, val); err != nil {
-		return fmt.Errorf("add allowed CIDR %s: %w", cidr, err)
+	if err := w.blockObjs.AllowedIps6.Put(key, val); err != nil {
+		return fmt.Errorf("add allowed IPv6 CIDR %s: %w", cidr, err)
 	}
 	return nil
 }
@@ -230,6 +276,11 @@ func (w *Watcher) Close() error {
 	if w.dnsWatcher != nil {
 		if err := w.dnsWatcher.Close(); err != nil {
 			errs = append(errs, err)
+		}
+	}
+	if w.cgroupLink6 != nil {
+		if err := w.cgroupLink6.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("cgroup link (connect6): %w", err))
 		}
 	}
 	if w.cgroupLink != nil {

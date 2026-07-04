@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/takihito/field-cage/internal/ebpf"
 )
 
@@ -205,5 +207,121 @@ func TestBlockWatcherAllowCIDR(t *testing.T) {
 	_, err = net.DialTimeout("tcp4", target, 2*time.Second)
 	if errors.Is(err, syscall.EPERM) {
 		t.Fatalf("after AllowCIDR(192.0.2.0/24), connect to %s must not be EPERM, got: %v", target, err)
+	}
+}
+
+// TestBlockWatcherDefaultDenyIPv6 verifies the cgroup/connect6 enforcement
+// program: ::1 loopback is always permitted, a non-allowlisted IPv6
+// destination is rejected with EPERM, and AllowIP / AllowCIDR lift the denial.
+// Skipped when the environment has no IPv6 support.
+func TestBlockWatcherDefaultDenyIPv6(t *testing.T) {
+	cgroupPath := setupTestCgroup(t)
+	denyAll := func(string) bool { return false }
+	w, err := ebpf.NewBlockWatcher(cgroupPath, denyAll)
+	if err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			t.Skipf("skipping: insufficient privileges (needs CAP_BPF/CAP_NET_RAW/root): %v", err)
+		}
+		t.Fatalf("NewBlockWatcher: %v", err)
+	}
+	defer w.Close()
+
+	// ::1 loopback is always allowed: a connection to a local listener must
+	// succeed. If IPv6 is unavailable in this environment, skip.
+	ln, err := net.Listen("tcp6", "[::1]:0")
+	if err != nil {
+		t.Skipf("skipping: IPv6 unavailable: %v", err)
+	}
+	defer ln.Close()
+	conn, err := net.DialTimeout("tcp6", ln.Addr().String(), 3*time.Second)
+	if err != nil {
+		t.Fatalf("IPv6 loopback connect should be allowed under block mode, got: %v", err)
+	}
+	conn.Close()
+
+	// 2001:db8::/32 (RFC 3849 documentation range): guaranteed non-routable.
+	const target = "[2001:db8::1]:80"
+
+	// Default-deny: rejected by the connect6 program with EPERM.
+	_, err = net.DialTimeout("tcp6", target, 2*time.Second)
+	if err == nil {
+		t.Fatalf("expected connect to %s to be denied, but it succeeded", target)
+	}
+	if !errors.Is(err, syscall.EPERM) {
+		t.Fatalf("expected EPERM for denied connect to %s, got: %v", target, err)
+	}
+
+	// AllowIP (/128) lifts the denial; the connect then proceeds to the network
+	// and fails with something other than EPERM (unroutable destination).
+	if err := w.AllowIP(net.ParseIP("2001:db8::1")); err != nil {
+		t.Fatalf("AllowIP: %v", err)
+	}
+	_, err = net.DialTimeout("tcp6", target, 2*time.Second)
+	if errors.Is(err, syscall.EPERM) {
+		t.Fatalf("after AllowIP, connect to %s should not be EPERM, got: %v", target, err)
+	}
+
+	// AllowCIDR: a different host inside a /64 seeded as a subnet.
+	const target2 = "[2001:db8:0:1::7]:80"
+	_, err = net.DialTimeout("tcp6", target2, 2*time.Second)
+	if !errors.Is(err, syscall.EPERM) {
+		t.Fatalf("expected EPERM for %s before AllowCIDR, got: %v", target2, err)
+	}
+	_, cidr, _ := net.ParseCIDR("2001:db8:0:1::/64")
+	if err := w.AllowCIDR(cidr); err != nil {
+		t.Fatalf("AllowCIDR: %v", err)
+	}
+	_, err = net.DialTimeout("tcp6", target2, 2*time.Second)
+	if errors.Is(err, syscall.EPERM) {
+		t.Fatalf("after AllowCIDR(2001:db8:0:1::/64), connect to %s should not be EPERM, got: %v", target2, err)
+	}
+}
+
+// TestBlockWatcherIPv4MappedConnect6 verifies that a dual-stack AF_INET6
+// socket connecting to an IPv4-mapped destination (::ffff:a.b.c.d) — the path
+// taken by Node.js and Java runtimes for IPv4 destinations — is enforced
+// against the IPv4 allowlist by the connect6 program. Go's net package
+// normalizes IPv4-mapped addresses to AF_INET sockets, so this test uses raw
+// syscalls to force the AF_INET6 path.
+func TestBlockWatcherIPv4MappedConnect6(t *testing.T) {
+	cgroupPath := setupTestCgroup(t)
+	denyAll := func(string) bool { return false }
+	w, err := ebpf.NewBlockWatcher(cgroupPath, denyAll)
+	if err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			t.Skipf("skipping: insufficient privileges (needs CAP_BPF/CAP_NET_RAW/root): %v", err)
+		}
+		t.Fatalf("NewBlockWatcher: %v", err)
+	}
+	defer w.Close()
+
+	// TEST-NET-2 (RFC 5737) in its IPv4-mapped form.
+	mapped := net.ParseIP("::ffff:198.51.100.7").To16()
+
+	// Non-blocking so an allowed connect returns EINPROGRESS immediately
+	// instead of hanging on the unroutable destination.
+	dial := func() error {
+		fd, err := unix.Socket(unix.AF_INET6, unix.SOCK_STREAM|unix.SOCK_NONBLOCK|unix.SOCK_CLOEXEC, 0)
+		if err != nil {
+			t.Skipf("skipping: cannot create AF_INET6 socket (IPv6 unavailable?): %v", err)
+		}
+		defer unix.Close(fd) //nolint:errcheck
+		sa := &unix.SockaddrInet6{Port: 80}
+		copy(sa.Addr[:], mapped)
+		return unix.Connect(fd, sa)
+	}
+
+	// Default-deny: the IPv4-mapped destination is not allowlisted → EPERM.
+	if err := dial(); !errors.Is(err, unix.EPERM) {
+		t.Fatalf("expected EPERM for v4-mapped connect before AllowIP, got: %v", err)
+	}
+
+	// Allowing the plain IPv4 address must lift the denial for the v4-mapped
+	// path too (the connect6 program consults the IPv4 trie).
+	if err := w.AllowIP(net.ParseIP("198.51.100.7")); err != nil {
+		t.Fatalf("AllowIP: %v", err)
+	}
+	if err := dial(); errors.Is(err, unix.EPERM) {
+		t.Fatalf("after AllowIP(198.51.100.7), v4-mapped connect should not be EPERM, got: %v", err)
 	}
 }

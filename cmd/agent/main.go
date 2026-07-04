@@ -109,15 +109,15 @@ func run(configPath, flagMode string) error {
 	}
 	fmt.Fprintf(os.Stderr, "field-cage %s: watching outbound connections [mode=%s] (Ctrl+C to stop)\n", version, modeLabel)
 	if mode == policy.ModeBlock {
-		// Enforcement is default-deny: the cgroup/connect4 program rejects any
-		// outbound connection whose destination IP is not on the allowlist.
-		// DNS (port 53) and loopback (127.0.0.0/8) are always permitted so name
-		// resolution and local services keep working. Limitations: only IPv4 is
-		// enforced (IPv6/connect6 is not yet hooked), and a connection to an
-		// allowlisted domain may be denied on the very first attempt if the
-		// application connects before the observed DNS response is applied to the
-		// map (fail-closed; the application's retry succeeds).
-		log.Printf("field-cage: block mode active (default-deny; DNS and loopback always allowed; IPv4 only)")
+		// Enforcement is default-deny: the cgroup/connect4 and cgroup/connect6
+		// programs reject any outbound connection whose destination IP is not on
+		// the allowlist. DNS (port 53) and loopback (127.0.0.0/8 and ::1) are
+		// always permitted so name resolution and local services keep working.
+		// Limitation: a connection to an allowlisted domain may be denied on the
+		// very first attempt if the application connects before the observed DNS
+		// response is applied to the map (fail-closed; the application's retry
+		// succeeds).
+		log.Printf("field-cage: block mode active (default-deny; DNS and loopback always allowed; IPv4+IPv6)")
 	}
 
 	sig := make(chan os.Signal, 1)
@@ -160,8 +160,9 @@ func run(configPath, flagMode string) error {
 	return nil
 }
 
-// seedAllowlist primes the enforcement map with the policy's explicit IP
-// entries and the current IPv4 addresses of each allowlisted domain. This lets
+// seedAllowlist primes the enforcement maps with the policy's explicit IP and
+// CIDR entries and the current IPv4/IPv6 addresses of each allowlisted domain.
+// This lets
 // connections to already-resolvable destinations succeed on the first attempt
 // rather than relying solely on observed DNS responses. Resolution failures are
 // logged and skipped; the domain can still be permitted later when its DNS
@@ -179,11 +180,11 @@ func seedAllowlist(w *ebpf.Watcher, engine *policy.Engine) {
 	}
 	var resolver net.Resolver
 	for _, domain := range engine.Domains() {
-		// "ip4" restricts results to IPv4; IPv6 enforcement is not yet
-		// implemented. Each lookup is bounded by seedLookupTimeout so a slow or
+		// "ip" resolves both A and AAAA records so IPv4 and IPv6 destinations
+		// are seeded. Each lookup is bounded by seedLookupTimeout so a slow or
 		// unreachable resolver cannot block startup indefinitely.
 		ctx, cancel := context.WithTimeout(context.Background(), seedLookupTimeout)
-		ips, err := resolver.LookupIP(ctx, "ip4", domain)
+		ips, err := resolver.LookupIP(ctx, "ip", domain)
 		cancel()
 		if err != nil {
 			log.Printf("field-cage: seed: resolve %s failed (will rely on observed DNS): %v", domain, err)

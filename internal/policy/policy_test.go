@@ -208,8 +208,9 @@ func TestCIDRAllowlist(t *testing.T) {
 	}
 }
 
-func TestIPv6CIDRSkipped(t *testing.T) {
-	// IPv6 CIDRs must be silently dropped, not treated as domain names.
+func TestIPv6CIDRAllowlist(t *testing.T) {
+	// IPv6 CIDRs are supported: containment is checked in Allow() and the
+	// entry must not leak into the domain store.
 	cfg := Config{
 		Mode:      ModeBlock,
 		Allowlist: []string{"2001:db8::/32", "github.com"},
@@ -222,13 +223,56 @@ func TestIPv6CIDRSkipped(t *testing.T) {
 	if e.IsAllowedDomain("2001:db8::/32") {
 		t.Error("IPv6 CIDR must not be stored as a domain name")
 	}
-	// No CIDRs stored (IPv6 is silently skipped)
-	if got := len(e.CIDRs()); got != 0 {
-		t.Errorf("CIDRs() len = %d, want 0 (IPv6 CIDRs are unsupported)", got)
+	if got := len(e.CIDRs()); got != 1 {
+		t.Errorf("CIDRs() len = %d, want 1", got)
 	}
-	// Only "github.com" in domains
 	if got := len(e.Domains()); got != 1 {
 		t.Errorf("Domains() len = %d, want 1; got %v", got, e.Domains())
+	}
+
+	cases := []struct {
+		ip   string
+		want bool
+	}{
+		{"2001:db8::1", true},                // inside /32
+		{"2001:db8:ffff::42", true},          // still inside /32
+		{"2001:db9::1", false},               // outside
+		{"2606:4700:4700::1111", false},      // unrelated IPv6
+		{"192.0.2.1", false},                 // IPv4 does not match an IPv6 CIDR
+	}
+	for _, tc := range cases {
+		ip := net.ParseIP(tc.ip)
+		if ip == nil {
+			t.Fatalf("bad test IP %q", tc.ip)
+		}
+		if got := e.Allow("", ip); got != tc.want {
+			t.Errorf("Allow(\"\", %q) = %v, want %v", tc.ip, got, tc.want)
+		}
+	}
+}
+
+func TestIPv6SingleIPAllowlist(t *testing.T) {
+	// Single IPv6 addresses, with and without a bracketed port.
+	cfg := Config{
+		Mode:      ModeBlock,
+		Allowlist: []string{"2001:db8::1", "[2001:db8::2]:443"},
+	}
+	e, err := newEngine(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !e.Allow("", net.ParseIP("2001:db8::1")) {
+		t.Error("2001:db8::1 must be allowed")
+	}
+	if !e.Allow("", net.ParseIP("2001:db8::2")) {
+		t.Error("2001:db8::2 (from bracketed host:port) must be allowed")
+	}
+	if e.Allow("", net.ParseIP("2001:db8::3")) {
+		t.Error("2001:db8::3 must be denied")
+	}
+	// IPs() must include both for seeding.
+	if got := len(e.IPs()); got != 2 {
+		t.Errorf("IPs() len = %d, want 2", got)
 	}
 }
 

@@ -25,7 +25,8 @@ type Config struct {
 
 // Engine evaluates outbound connections against a policy.
 // Domain matching is exact (case-insensitive). Wildcards are not supported.
-// CIDR ranges (e.g. "10.0.0.0/8") are supported for IPv4 subnets.
+// CIDR ranges are supported for IPv4 ("10.0.0.0/8") and IPv6
+// ("2001:db8::/32") subnets.
 type Engine struct {
 	mode      Mode
 	domains   map[string]struct{}
@@ -79,14 +80,9 @@ func newEngine(cfg Config) (*Engine, error) {
 			if ip := net.ParseIP(host); ip != nil {
 				e.allowedIP[ip.String()] = struct{}{}
 			} else if _, cidr, err := net.ParseCIDR(host); err == nil {
-				if cidr.IP.To4() != nil {
-					// IPv4 CIDR range (e.g. "10.0.0.0/8", "203.0.113.0/24").
-					// net.ParseCIDR masks the address, so cidr.IP is the network address.
-					e.cidrs = append(e.cidrs, cidr)
-				}
-				// IPv6 CIDRs (e.g. "2001:db8::/32") are silently skipped — only
-				// IPv4 is enforced. Falling through to the domain branch would
-				// treat them as DNS names and cause spurious resolution failures.
+				// CIDR range, IPv4 (e.g. "10.0.0.0/8") or IPv6 (e.g. "2001:db8::/32").
+				// net.ParseCIDR masks the address, so cidr.IP is the network address.
+				e.cidrs = append(e.cidrs, cidr)
 			} else {
 				e.domains[strings.ToLower(host)] = struct{}{}
 			}
@@ -120,8 +116,8 @@ func (e *Engine) IPs() []net.IP {
 	return ips
 }
 
-// CIDRs returns the allowlisted IPv4 CIDR ranges. Used to seed the
-// enforcement LPM trie at startup.
+// CIDRs returns the allowlisted CIDR ranges (IPv4 and IPv6). Used to seed
+// the enforcement LPM tries at startup.
 func (e *Engine) CIDRs() []*net.IPNet {
 	out := make([]*net.IPNet, len(e.cidrs))
 	copy(out, e.cidrs)
@@ -140,7 +136,7 @@ func (e *Engine) IsAllowedDomain(domain string) bool {
 
 // Allow reports whether the given domain and IP are permitted by the policy.
 // Domain matching is exact and case-insensitive; wildcards are not supported.
-// CIDR containment is checked for IPv4 addresses.
+// CIDR containment is checked for both IPv4 and IPv6 addresses.
 // domain may be empty if DNS resolution has not occurred yet; in that case
 // only the IP is checked.
 func (e *Engine) Allow(domain string, ip net.IP) bool {

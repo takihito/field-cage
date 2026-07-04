@@ -9,13 +9,14 @@ A lightweight eBPF agent that monitors and restricts outbound network connection
 field-cage hooks into the Linux kernel via eBPF to observe every outbound connection attempt in real time. It maps raw IP addresses to domain names through DNS packet monitoring, then evaluates each connection against a YAML allowlist.
 
 - **Audit mode** — logs all connections without blocking. Safe to add to any existing workflow
-- **Block mode** — default-deny: every outbound connection whose destination is not on the allowlist is rejected (`EPERM` returned to the process). DNS (port 53) and loopback are always permitted
+- **Block mode** — default-deny: every outbound IPv4/IPv6 connection whose destination is not on the allowlist is rejected (`EPERM` returned to the process). DNS (port 53) and loopback are always permitted
 
 ## Features
 
-- Automatic IP-to-domain mapping via DNS packet monitoring
-- YAML policy: exact domain and IP matching (case-insensitive)
-- IPv4 CIDR subnet matching (e.g. `10.0.0.0/8`, `203.0.113.0/24`)
+- Automatic IP-to-domain mapping via DNS packet monitoring (A and AAAA records)
+- YAML policy: exact domain and IP matching (case-insensitive), IPv4 and IPv6
+- CIDR subnet matching (e.g. `10.0.0.0/8`, `203.0.113.0/24`, `2001:db8::/32`)
+- Dual-stack aware: IPv4-mapped IPv6 connections (`::ffff:a.b.c.d`, used by Node.js/Java dual-stack sockets) are enforced against the IPv4 allowlist
 
 ## Log output
 
@@ -41,14 +42,16 @@ allowlist:
   - api.github.com
   - codeload.github.com
   - objects.githubusercontent.com
-  - 1.2.3.4             # single IP address
+  - 1.2.3.4             # single IPv4 address
+  - 2001:db8::1         # single IPv6 address
   - 10.0.0.0/8          # IPv4 CIDR subnet (private range)
   - 203.0.113.0/24      # any /N prefix length is supported
+  - 2001:db8::/32       # IPv6 CIDR subnet
 ```
 
 > **Note**: Wildcards (`*.github.com`) are not supported. List each subdomain explicitly.
 >
-> **CIDR**: Only IPv4 CIDRs are supported. A CIDR entry seeds the eBPF LPM trie directly, so all addresses in the subnet are permitted without per-IP DNS resolution.
+> **CIDR**: A CIDR entry seeds the eBPF LPM trie directly, so all addresses in the subnet are permitted without per-IP DNS resolution.
 
 ## Usage
 
@@ -173,20 +176,19 @@ make setup-hooks
 
 ## Block mode enforcement model
 
-Block mode is **default-deny**: the `cgroup/connect4` program rejects every outbound IPv4 connection unless its destination IP is on the allowlist. The allowlist is built by:
+Block mode is **default-deny**: the `cgroup/connect4` and `cgroup/connect6` programs reject every outbound IPv4/IPv6 connection unless its destination IP is on the allowlist. IPv4-mapped IPv6 destinations (`::ffff:a.b.c.d`, the path dual-stack runtimes such as Node.js and Java take to IPv4 hosts) are checked against the IPv4 allowlist, so one IPv4 entry covers both socket families. The allowlist is built by:
 
-1. **Startup seeding** — explicit IP entries are added directly, and each allowlisted domain is resolved (IPv4) and its addresses added.
-2. **Live DNS observation** — when a DNS response for an allowlisted domain is seen on the wire, its A-record IPs are added to the allowlist before the application connects. Only responses originating from a configured resolver (the `nameserver` entries in `/etc/resolv.conf`) or from loopback are trusted for this; responses from any other source are cached for logging but never extend the kernel allowlist, so a forged response with a spoofed source port 53 cannot poison it.
+1. **Startup seeding** — explicit IP and CIDR entries are added directly, and each allowlisted domain is resolved (A and AAAA) and its addresses added.
+2. **Live DNS observation** — when a DNS response for an allowlisted domain is seen on the wire, its A/AAAA-record IPs are added to the allowlist before the application connects. Only responses originating from a configured resolver (the `nameserver` entries in `/etc/resolv.conf`) or from loopback are trusted for this; responses from any other source are cached for logging but never extend the kernel allowlist, so a forged response with a spoofed source port 53 cannot poison it.
 
-DNS (destination port 53) and loopback (`127.0.0.0/8`) are always permitted so that name resolution and local services keep working. A policy file is required in block mode; without one the agent refuses to start rather than deny all traffic.
+DNS (destination port 53) and loopback (`127.0.0.0/8` and `::1`) are always permitted so that name resolution and local services keep working. A policy file is required in block mode; without one the agent refuses to start rather than deny all traffic.
 
 ## Limitations
 
 - **First-connection race (fail-closed)**: a connection to an allowlisted domain may be denied on the very first attempt if the application connects before the observed DNS response is applied to the map. This fails *closed* (the connection is denied, not leaked); the application's retry succeeds once the map is updated. Startup seeding avoids this for domains resolvable at launch.
-- **IPv4 only**: IPv6 connections (`connect6`) are not yet hooked, so they are **not enforced** in block mode. IPv6 enforcement is planned.
 - **DNS over port 53 is always allowed**: this is required for name resolution to function under default-deny. As a side effect, low-bandwidth exfiltration via DNS tunneling is not blocked (it is still visible in the DNS monitoring logs).
 - **Live allowlisting trusts resolver-sourced responses**: only DNS responses from a configured resolver or loopback extend the allowlist. Forging a trusted response requires binding source port 53 (`CAP_NET_BIND_SERVICE`) or a raw socket (`CAP_NET_RAW`) — capabilities a normal build step does not hold; an attacker who already has them can subvert enforcement by other means.
-- **Live allowlisting only observes plaintext IPv4 UDP DNS (port 53)**: DNS carried over IPv6 transport, TCP, or encrypted (DoH/DoT) is not observed, so it cannot extend the allowlist. Domains resolved that way are only covered by startup seeding; if their addresses rotate afterwards, block mode will deny the new IPs (fail-closed). Keep such domains pinned by IP in the policy, or ensure they resolve via plaintext IPv4 UDP.
+- **Live allowlisting only observes plaintext UDP DNS over IPv4 transport (port 53)**: DNS carried over IPv6 transport, TCP, or encrypted (DoH/DoT) is not observed, so it cannot extend the allowlist — this applies to both A and AAAA records (AAAA answers *are* observed when the query travels over IPv4 transport, the common case). Domains resolved via unobserved channels are only covered by startup seeding; if their addresses rotate afterwards, block mode will deny the new IPs (fail-closed). Keep such domains pinned by IP in the policy, or ensure they resolve via plaintext UDP over IPv4.
 - **DNS packet monitoring requires `CAP_NET_RAW`**: In block mode, failure to start DNS packet monitoring is fatal (fail-closed). In audit mode it is best-effort.
 
 ## Architecture
@@ -200,9 +202,10 @@ DNS (destination port 53) and loopback (`127.0.0.0/8`) are always permitted so t
 │  socket_filter (port 53)                    │
 │    → pushes DNS responses to ring buffer    │
 │                                             │
-│  cgroup/connect4  (block mode only)         │
+│  cgroup/connect4 + connect6 (block mode)    │
 │    → default-deny; allows port 53, loopback,│
-│      and IPs in the allowed_ips map (1=allow)│
+│      and IPs in the allowed_ips /           │
+│      allowed_ips6 LPM tries                 │
 └─────────────────────────────────────────────┘
                      ↕ cilium/ebpf
 ┌─────────────────────────────────────────────┐

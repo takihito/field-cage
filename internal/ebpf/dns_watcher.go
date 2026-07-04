@@ -17,8 +17,8 @@ import (
 
 // dnsWatcher attaches an eBPF socket_filter to a raw AF_PACKET socket,
 // reads DNS response payloads from the ring buffer, and populates a DNSCache.
-// In block mode, isAllowed and allow are set so that A records resolved for
-// allowlisted domains are proactively added to the enforcement allowlist;
+// In block mode, isAllowed and allow are set so that A/AAAA records resolved
+// for allowlisted domains are proactively added to the enforcement allowlist;
 // both are nil in audit mode. trustedResolvers holds the nameserver IPs that
 // responses must originate from before they are trusted for allowlisting
 // (loopback is always trusted); it is only consulted when allow is non-nil.
