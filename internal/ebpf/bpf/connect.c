@@ -8,7 +8,8 @@
 
 // Define UAPI types inline to avoid header-chain issues with -target bpf.
 // These constants and struct layouts are stable in the Linux kernel UAPI.
-#define AF_INET 2
+#define AF_INET  2
+#define AF_INET6 10
 
 struct in_addr {
 	__u32 s_addr;
@@ -21,18 +22,30 @@ struct sockaddr_in {
 	__u8           sin_zero[8];
 };
 
+struct sockaddr_in6 {
+	__u16 sin6_family;
+	__u16 sin6_port;
+	__u32 sin6_flowinfo;
+	__u8  sin6_addr[16];
+	__u32 sin6_scope_id;
+};
+
 #define TASK_COMM_LEN 16
 
 // Event emitted to user-space via the ring buffer.
-// connect_ns holds the duration of the connect() syscall in nanoseconds;
-// the Go agent converts this to milliseconds for logging.
+// daddr holds the destination address in network byte order: for AF_INET the
+// first 4 bytes are significant, for AF_INET6 all 16 bytes are. family
+// distinguishes the two. The explicit _pad field keeps the C layout identical
+// to Go's packed binary.Read layout in internal/ebpf/event.go — keep both in
+// sync when changing this struct.
 struct event {
 	__u32 pid;
 	__u32 tgid;
 	__u16 dport;       // host byte order
-	__u16 family;
-	__u8  daddr[4];    // network byte order (big-endian), IPv4 only
+	__u16 family;      // AF_INET or AF_INET6
+	__u8  daddr[16];   // network byte order; IPv4 uses first 4 bytes
 	char  comm[TASK_COMM_LEN];
+	__u32 _pad;        // explicit padding before the 8-byte-aligned field
 	__u64 connect_ns;  // connect() duration: sys_exit_connect - sys_enter_connect
 };
 
@@ -42,7 +55,7 @@ struct pending_connect {
 	__u64 start_ns;
 	__u16 dport;
 	__u16 family;
-	__u8  daddr[4];
+	__u8  daddr[16];
 	char  comm[TASK_COMM_LEN];
 	__u32 pid;
 	__u32 tgid;
@@ -81,24 +94,37 @@ struct connect_exit_args {
 SEC("tracepoint/syscalls/sys_enter_connect")
 int trace_connect_enter(struct connect_enter_args *ctx)
 {
-	struct sockaddr_in sa = {};
-
-	if (bpf_probe_read_user(&sa, sizeof(sa), ctx->uservaddr) < 0)
+	// Read the address family first: the sockaddr size differs per family, and
+	// reading past the user buffer (e.g. sockaddr_in6 from an AF_INET connect)
+	// could fault and drop the event.
+	__u16 family = 0;
+	if (bpf_probe_read_user(&family, sizeof(family), ctx->uservaddr) < 0)
 		return 0;
 
-	// IPv4 only for the prototype
-	if (sa.sin_family != AF_INET)
+	struct pending_connect pc = {};
+
+	if (family == AF_INET) {
+		struct sockaddr_in sa = {};
+		if (bpf_probe_read_user(&sa, sizeof(sa), ctx->uservaddr) < 0)
+			return 0;
+		pc.dport = bpf_ntohs(sa.sin_port);
+		__builtin_memcpy(pc.daddr, &sa.sin_addr.s_addr, 4);
+	} else if (family == AF_INET6) {
+		struct sockaddr_in6 sa6 = {};
+		if (bpf_probe_read_user(&sa6, sizeof(sa6), ctx->uservaddr) < 0)
+			return 0;
+		pc.dport = bpf_ntohs(sa6.sin6_port);
+		__builtin_memcpy(pc.daddr, sa6.sin6_addr, 16);
+	} else {
 		return 0;
+	}
 
 	__u64 pid_tgid = bpf_get_current_pid_tgid();
 
-	struct pending_connect pc = {};
 	pc.start_ns = bpf_ktime_get_ns();
 	pc.pid      = (__u32)pid_tgid;
 	pc.tgid     = (__u32)(pid_tgid >> 32);
-	pc.family   = sa.sin_family;
-	pc.dport    = bpf_ntohs(sa.sin_port);
-	__builtin_memcpy(pc.daddr, &sa.sin_addr.s_addr, 4);
+	pc.family   = family;
 	bpf_get_current_comm(pc.comm, sizeof(pc.comm));
 
 	// If the map is full, the event will be silently dropped at sys_exit_connect.
@@ -130,8 +156,9 @@ int trace_connect_exit(struct connect_exit_args *ctx)
 	e->tgid       = pc->tgid;
 	e->family     = pc->family;
 	e->dport      = pc->dport;
-	__builtin_memcpy(e->daddr, pc->daddr, 4);
+	__builtin_memcpy(e->daddr, pc->daddr, 16);
 	__builtin_memcpy(e->comm,  pc->comm,  TASK_COMM_LEN);
+	e->_pad       = 0;
 	e->connect_ns = connect_ns;
 
 	bpf_map_delete_elem(&pending_connects, &pid_tgid);

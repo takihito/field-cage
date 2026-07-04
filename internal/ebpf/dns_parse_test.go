@@ -84,6 +84,39 @@ func TestParseDNSResponse_ARecord(t *testing.T) {
 	}
 }
 
+// buildDNSResponseAAAA constructs a minimal DNS response with one AAAA record.
+func buildDNSResponseAAAA(domain string, ip net.IP) []byte {
+	msg := buildDNSResponse(domain, net.IP{0, 0, 0, 0})
+	// Replace the A answer with an AAAA answer. The A answer is 16 bytes:
+	// name ptr(2) + type(2) + class(2) + ttl(4) + rdlength(2) + rdata(4).
+	msg = msg[:len(msg)-16]
+	answer := []byte{
+		0xc0, 0x0c, // pointer to offset 12 (start of question QNAME)
+		0x00, 0x1c, // TYPE = AAAA (28)
+		0x00, 0x01, // CLASS = IN
+		0x00, 0x00, 0x00, 0x3c, // TTL = 60
+		0x00, 0x10, // RDLENGTH = 16
+	}
+	answer = append(answer, ip.To16()...)
+	return append(msg, answer...)
+}
+
+func TestParseDNSResponse_AAAARecord(t *testing.T) {
+	ip := net.ParseIP("2001:db8::1")
+	msg := buildDNSResponseAAAA("example.com", ip)
+
+	domain, ips := parseDNSResponse(msg)
+	if domain != "example.com" {
+		t.Errorf("domain = %q, want %q", domain, "example.com")
+	}
+	if len(ips) != 1 {
+		t.Fatalf("len(ips) = %d, want 1", len(ips))
+	}
+	if !ips[0].Equal(ip) {
+		t.Errorf("ip = %v, want %v", ips[0], ip)
+	}
+}
+
 func TestParseDNSResponse_NotResponse(t *testing.T) {
 	// QR bit = 0 → query, not response
 	msg := buildDNSResponse("example.com", net.IP{1, 2, 3, 4})

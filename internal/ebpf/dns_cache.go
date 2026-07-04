@@ -5,8 +5,8 @@ import (
 	"sync"
 )
 
-// DNSCache maps IPv4 addresses to the domain name resolved to that address.
-// It is safe for concurrent use.
+// DNSCache maps IP addresses (IPv4 and IPv6) to the domain name resolved to
+// that address. It is safe for concurrent use.
 type DNSCache struct {
 	mu      sync.RWMutex
 	entries map[string]string // net.IP.String() → domain

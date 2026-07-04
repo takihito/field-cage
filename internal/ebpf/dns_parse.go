@@ -57,8 +57,8 @@ func isTrustedSourceIP(ip net.IP, trusted map[string]struct{}) bool {
 }
 
 // parseDNSResponse parses a raw DNS response and returns the queried domain
-// name and the list of IPv4 addresses from A records in the answer section.
-// Returns empty values if the message is not a valid DNS response.
+// name and the list of IP addresses from A and AAAA records in the answer
+// section. Returns empty values if the message is not a valid DNS response.
 func parseDNSResponse(data []byte) (domain string, ips []net.IP) {
 	if len(data) < 12 {
 		return "", nil
@@ -87,7 +87,7 @@ func parseDNSResponse(data []byte) (domain string, ips []net.IP) {
 		offset = n + 4 // skip QTYPE (2 bytes) + QCLASS (2 bytes)
 	}
 
-	// Parse answer section and collect A records.
+	// Parse answer section and collect A and AAAA records.
 	for i := 0; i < ancount; i++ {
 		_, n, ok := readDNSName(data, offset)
 		if !ok {
@@ -103,9 +103,14 @@ func parseDNSResponse(data []byte) (domain string, ips []net.IP) {
 		if offset+rdlen > len(data) {
 			break
 		}
-		if rtype == 1 && rdlen == 4 { // A record
+		switch {
+		case rtype == 1 && rdlen == 4: // A record
 			ip := make(net.IP, 4)
 			copy(ip, data[offset:offset+4])
+			ips = append(ips, ip)
+		case rtype == 28 && rdlen == 16: // AAAA record
+			ip := make(net.IP, 16)
+			copy(ip, data[offset:offset+16])
 			ips = append(ips, ip)
 		}
 		offset += rdlen
