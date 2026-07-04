@@ -154,6 +154,47 @@ func TestMalformedPortOnlyEntry(t *testing.T) {
 	}
 }
 
+func TestAllowAllDNSDefault(t *testing.T) {
+	// allow_all_dns defaults to false when unset.
+	e, err := newEngine(Config{Mode: ModeBlock, Allowlist: []string{"github.com"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.AllowAllDNS() {
+		t.Error("AllowAllDNS() = true, want false by default")
+	}
+}
+
+func TestAllowAllDNSEnabled(t *testing.T) {
+	e, err := newEngine(Config{Mode: ModeBlock, Allowlist: []string{"github.com"}, AllowAllDNS: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !e.AllowAllDNS() {
+		t.Error("AllowAllDNS() = false, want true when configured")
+	}
+}
+
+func TestAllowAllDNSFromYAML(t *testing.T) {
+	yaml := `
+mode: block
+allow_all_dns: true
+allowlist:
+  - github.com
+`
+	f := filepath.Join(t.TempDir(), "policy.yml")
+	if err := os.WriteFile(f, []byte(yaml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	e, err := LoadFile(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !e.AllowAllDNS() {
+		t.Error("AllowAllDNS() = false, want true (allow_all_dns: true in YAML)")
+	}
+}
+
 func TestCIDRAllowlist(t *testing.T) {
 	cfg := Config{
 		Mode: ModeBlock,

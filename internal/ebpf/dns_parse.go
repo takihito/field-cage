@@ -13,10 +13,12 @@ func htons(v uint16) uint16 {
 	return binary.NativeEndian.Uint16(b[:])
 }
 
-// parseResolvConf extracts the IPv4 nameserver addresses from /etc/resolv.conf
-// contents. These are the resolver source IPs trusted for live allowlisting.
-func parseResolvConf(data []byte) map[string]struct{} {
-	set := make(map[string]struct{})
+// parseResolvConf extracts the nameserver IP addresses (IPv4 and IPv6) from
+// /etc/resolv.conf contents. These resolver IPs are trusted both for port-53
+// enforcement (permitting DNS to them under default-deny) and for validating
+// the source of observed DNS responses used in live allowlisting.
+func parseResolvConf(data []byte) []net.IP {
+	var ips []net.IP
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
@@ -27,12 +29,10 @@ func parseResolvConf(data []byte) map[string]struct{} {
 			continue
 		}
 		if ip := net.ParseIP(fields[1]); ip != nil {
-			if ip4 := ip.To4(); ip4 != nil {
-				set[ip4.String()] = struct{}{}
-			}
+			ips = append(ips, ip)
 		}
 	}
-	return set
+	return ips
 }
 
 // isTrustedSourceIP reports whether a DNS response from the given source IP may

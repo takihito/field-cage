@@ -21,6 +21,10 @@ const (
 type Config struct {
 	Mode      Mode     `yaml:"mode"`
 	Allowlist []string `yaml:"allowlist"`
+	// AllowAllDNS opts out of resolver-restricted DNS: when true, any port-53
+	// destination is permitted (legacy behavior). Default false, which permits
+	// port 53 only to configured resolvers and loopback.
+	AllowAllDNS bool `yaml:"allow_all_dns"`
 }
 
 // Engine evaluates outbound connections against a policy.
@@ -28,10 +32,11 @@ type Config struct {
 // CIDR ranges are supported for IPv4 ("10.0.0.0/8") and IPv6
 // ("2001:db8::/32") subnets.
 type Engine struct {
-	mode      Mode
-	domains   map[string]struct{}
-	allowedIP map[string]struct{}
-	cidrs     []*net.IPNet
+	mode        Mode
+	domains     map[string]struct{}
+	allowedIP   map[string]struct{}
+	cidrs       []*net.IPNet
+	allowAllDNS bool
 }
 
 // LoadFile parses a YAML policy file and returns an Engine.
@@ -55,9 +60,10 @@ func newEngine(cfg Config) (*Engine, error) {
 	}
 
 	e := &Engine{
-		mode:      cfg.Mode,
-		domains:   make(map[string]struct{}),
-		allowedIP: make(map[string]struct{}),
+		mode:        cfg.Mode,
+		domains:     make(map[string]struct{}),
+		allowedIP:   make(map[string]struct{}),
+		allowAllDNS: cfg.AllowAllDNS,
 	}
 	for _, entry := range cfg.Allowlist {
 		entry = strings.TrimSpace(entry)
@@ -93,6 +99,11 @@ func newEngine(cfg Config) (*Engine, error) {
 
 // Mode returns the configured enforcement mode.
 func (e *Engine) Mode() Mode { return e.mode }
+
+// AllowAllDNS reports whether port-53 (DNS) connections to any destination are
+// permitted. When false (the default), only configured resolvers and loopback
+// are allowed on port 53.
+func (e *Engine) AllowAllDNS() bool { return e.allowAllDNS }
 
 // Domains returns the allowlisted domain names (lowercased). Used to seed the
 // enforcement map at startup by resolving each domain to its IP addresses.

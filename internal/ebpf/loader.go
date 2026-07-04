@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
 
 	ciliumebpf "github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
@@ -107,6 +108,10 @@ func newWatcher(cgroupPath string, isAllowedDomain func(string) bool) (w *Watche
 			w.cgroupLink.Close()  //nolint:errcheck
 			w.blockObjs.Close()
 		})
+		// Seed trusted resolver IPs so DNS (port 53) is permitted to them under
+		// default-deny. Loopback resolvers are already covered by the loopback
+		// rule; if no resolvers are found only loopback DNS works (fail-closed).
+		w.seedResolvers()
 	}
 
 	// In block mode, observed DNS responses for allowlisted domains are added to
@@ -253,6 +258,84 @@ func (w *Watcher) AllowCIDR(cidr *net.IPNet) error {
 		return fmt.Errorf("add allowed IPv6 CIDR %s: %w", cidr, err)
 	}
 	return nil
+}
+
+// AllowResolver permits port-53 (DNS) connections to the given resolver IP
+// under default-deny enforcement. IPv4 (and IPv4-mapped IPv6) addresses go to
+// the dns_resolvers set; IPv6 to dns_resolvers6. It is a no-op for nil
+// addresses or if the watcher was not created with NewBlockWatcher. Loopback
+// resolvers need not be seeded — the program always permits loopback.
+func (w *Watcher) AllowResolver(ip net.IP) error {
+	if w.blockObjs == nil || ip == nil {
+		return nil
+	}
+	var val uint8 = 1
+	if ip4 := ip.To4(); ip4 != nil {
+		var key [4]byte
+		copy(key[:], ip4)
+		if err := w.blockObjs.DnsResolvers.Put(key, val); err != nil {
+			return fmt.Errorf("add DNS resolver %s: %w", ip, err)
+		}
+		return nil
+	}
+	ip16 := ip.To16()
+	if ip16 == nil {
+		return nil
+	}
+	var key [16]byte
+	copy(key[:], ip16)
+	if err := w.blockObjs.DnsResolvers6.Put(key, val); err != nil {
+		return fmt.Errorf("add DNS resolver (v6) %s: %w", ip, err)
+	}
+	return nil
+}
+
+// SetAllowAllDNS toggles the allow_all_dns opt-in in the enforcement config
+// map. When enabled, any port-53 destination is permitted (legacy behavior);
+// when disabled (the default), only trusted resolvers and loopback are
+// permitted on port 53. No-op if not created with NewBlockWatcher.
+func (w *Watcher) SetAllowAllDNS(enabled bool) error {
+	if w.blockObjs == nil {
+		return nil
+	}
+	var idx uint32
+	var val uint8
+	if enabled {
+		val = 1
+	}
+	if err := w.blockObjs.Config.Put(idx, val); err != nil {
+		return fmt.Errorf("set allow_all_dns=%v: %w", enabled, err)
+	}
+	return nil
+}
+
+// seedResolvers reads /etc/resolv.conf and permits DNS (port 53) to each
+// configured non-loopback nameserver. On read failure or when no nameservers
+// are found, only loopback DNS is permitted (fail-closed); any external
+// resolver would then be denied, which is logged so a broken name-resolution
+// setup can be diagnosed.
+func (w *Watcher) seedResolvers() {
+	data, err := os.ReadFile("/etc/resolv.conf")
+	if err != nil {
+		log.Printf("field-cage: read /etc/resolv.conf for DNS resolver allowlist failed; "+
+			"only loopback DNS will be permitted under block mode: %v", err)
+		return
+	}
+	seeded := 0
+	for _, ip := range parseResolvConf(data) {
+		if ip.IsLoopback() {
+			continue // loopback is always permitted by the program
+		}
+		if err := w.AllowResolver(ip); err != nil {
+			log.Printf("field-cage: seed DNS resolver %s: %v", ip, err)
+			continue
+		}
+		seeded++
+	}
+	if seeded == 0 {
+		log.Printf("field-cage: no non-loopback nameservers seeded from /etc/resolv.conf; " +
+			"only loopback DNS is permitted under block mode (set allow_all_dns: true to relax)")
+	}
 }
 
 // Read blocks until a connection event is available and returns it.

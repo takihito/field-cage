@@ -71,7 +71,14 @@ func newDNSWatcher(cache *DNSCache, isAllowed func(string) bool, allow func(net.
 		if err != nil {
 			log.Printf("field-cage: read /etc/resolv.conf failed; live DNS allowlisting limited to loopback responses: %v", err)
 		}
-		w.trustedResolvers = parseResolvConf(data)
+		w.trustedResolvers = make(map[string]struct{})
+		for _, ip := range parseResolvConf(data) {
+			// DNS monitoring currently observes only IPv4-transport responses, so
+			// IPv6 resolver entries never match an observed source IP here;
+			// recording them is harmless and keeps this set in sync with the
+			// enforcement resolver seeding in the loader.
+			w.trustedResolvers[ip.String()] = struct{}{}
+		}
 	}
 
 	go w.run()

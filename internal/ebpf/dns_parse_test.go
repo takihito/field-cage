@@ -171,18 +171,20 @@ search example.com
 nameserver
 `)
 	got := parseResolvConf(data)
-	want := map[string]struct{}{"127.0.0.53": {}, "8.8.8.8": {}}
+	// Both IPv4 and IPv6 nameservers are returned (resolver enforcement and
+	// live-allowlisting source validation both consume this list).
+	want := []string{"127.0.0.53", "8.8.8.8", "2001:4860:4860::8888"}
 	if len(got) != len(want) {
 		t.Fatalf("parseResolvConf returned %d entries, want %d: %v", len(got), len(want), got)
 	}
-	for ip := range want {
-		if _, ok := got[ip]; !ok {
-			t.Errorf("expected nameserver %s to be parsed", ip)
-		}
+	gotSet := make(map[string]struct{}, len(got))
+	for _, ip := range got {
+		gotSet[ip.String()] = struct{}{}
 	}
-	// IPv6 nameservers are ignored (IPv4-only enforcement).
-	if _, ok := got["2001:4860:4860::8888"]; ok {
-		t.Error("IPv6 nameserver should not be included")
+	for _, w := range want {
+		if _, ok := gotSet[w]; !ok {
+			t.Errorf("expected nameserver %s to be parsed, got %v", w, got)
+		}
 	}
 }
 

@@ -168,6 +168,12 @@ func run(configPath, flagMode string) error {
 // logged and skipped; the domain can still be permitted later when its DNS
 // response is observed.
 func seedAllowlist(w *ebpf.Watcher, engine *policy.Engine) {
+	// Reflect the DNS policy: by default port 53 is restricted to configured
+	// resolvers and loopback; allow_all_dns opts back into permitting any
+	// port-53 destination.
+	if err := w.SetAllowAllDNS(engine.AllowAllDNS()); err != nil {
+		log.Printf("field-cage: set allow_all_dns: %v", err)
+	}
 	for _, ip := range engine.IPs() {
 		if err := w.AllowIP(ip); err != nil {
 			log.Printf("field-cage: seed allowed IP %s: %v", ip, err)
