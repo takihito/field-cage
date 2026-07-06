@@ -19,6 +19,8 @@ const (
 
 // Config holds the loaded policy configuration.
 type Config struct {
+	// Mode may be empty (unspecified): the effective mode is then resolved by
+	// the caller — the --mode flag if given, audit otherwise.
 	Mode      Mode     `yaml:"mode"`
 	Allowlist []string `yaml:"allowlist"`
 	// AllowAllDNS opts out of resolver-restricted DNS: when true, any port-53
@@ -34,7 +36,7 @@ type Config struct {
 type Engine struct {
 	mode        Mode
 	domains     map[string]struct{}
-	allowedIP   map[string]struct{}
+	allowedIP   map[string]net.IP // canonical string form → parsed IP
 	cidrs       []*net.IPNet
 	allowAllDNS bool
 }
@@ -55,6 +57,7 @@ func LoadFile(path string) (*Engine, error) {
 func newEngine(cfg Config) (*Engine, error) {
 	switch cfg.Mode {
 	case ModeAudit, ModeBlock:
+	case "": // unspecified: resolved by the caller (--mode flag, or audit default)
 	default:
 		return nil, fmt.Errorf("invalid mode %q: must be %q or %q", cfg.Mode, ModeAudit, ModeBlock)
 	}
@@ -62,13 +65,19 @@ func newEngine(cfg Config) (*Engine, error) {
 	e := &Engine{
 		mode:        cfg.Mode,
 		domains:     make(map[string]struct{}),
-		allowedIP:   make(map[string]struct{}),
+		allowedIP:   make(map[string]net.IP),
 		allowAllDNS: cfg.AllowAllDNS,
 	}
 	for _, entry := range cfg.Allowlist {
 		entry = strings.TrimSpace(entry)
+		if strings.Contains(entry, "*") {
+			// Matching is exact, so a wildcard entry would be stored as a
+			// literal name that never matches — in block mode that silently
+			// denies everything the user meant to allow. Fail fast instead.
+			return nil, fmt.Errorf("wildcard allowlist entries are not supported: %q (list each subdomain explicitly)", entry)
+		}
 		if ip := net.ParseIP(entry); ip != nil {
-			e.allowedIP[ip.String()] = struct{}{} // canonicalize to prevent representation mismatches
+			e.allowedIP[ip.String()] = ip // canonicalize to prevent representation mismatches
 		} else {
 			// Strip an optional port suffix (e.g. "kayac.com:443" → "kayac.com",
 			// "203.0.113.10:443" → "203.0.113.10"). Ports are not part of DNS
@@ -84,7 +93,7 @@ func newEngine(cfg Config) (*Engine, error) {
 			// Re-parse: "203.0.113.10:443" strips to an IP and must go to
 			// allowedIP, not domains.
 			if ip := net.ParseIP(host); ip != nil {
-				e.allowedIP[ip.String()] = struct{}{}
+				e.allowedIP[ip.String()] = ip
 			} else if _, cidr, err := net.ParseCIDR(host); err == nil {
 				// CIDR range, IPv4 (e.g. "10.0.0.0/8") or IPv6 (e.g. "2001:db8::/32").
 				// net.ParseCIDR masks the address, so cidr.IP is the network address.
@@ -97,7 +106,8 @@ func newEngine(cfg Config) (*Engine, error) {
 	return e, nil
 }
 
-// Mode returns the configured enforcement mode.
+// Mode returns the configured enforcement mode. It is empty when the policy
+// file does not specify one; the caller decides the effective mode then.
 func (e *Engine) Mode() Mode { return e.mode }
 
 // AllowAllDNS reports whether port-53 (DNS) connections to any destination are
@@ -119,10 +129,8 @@ func (e *Engine) Domains() []string {
 // seed the enforcement map at startup.
 func (e *Engine) IPs() []net.IP {
 	ips := make([]net.IP, 0, len(e.allowedIP))
-	for s := range e.allowedIP {
-		if ip := net.ParseIP(s); ip != nil {
-			ips = append(ips, ip)
-		}
+	for _, ip := range e.allowedIP {
+		ips = append(ips, ip)
 	}
 	return ips
 }

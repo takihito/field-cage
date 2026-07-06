@@ -36,7 +36,8 @@ verdict=DENY(no-domain)      pid=1236   tgid=1236   comm=curl             dst=93
 ## ポリシーファイル
 
 ```yaml
-mode: block          # audit または block
+mode: block          # 任意。audit または block。省略時は audit
+                     # （いずれの場合も --mode フラグが優先されます）
 allow_all_dns: false # 任意。下記「DNS の扱い」を参照（デフォルト false）
 
 allowlist:
@@ -51,7 +52,7 @@ allowlist:
   - 2001:db8::/32       # IPv6 CIDR サブネット
 ```
 
-> **注意**: ワイルドカード（`*.github.com`）は非対応です。サブドメインは個別に列挙してください。
+> **注意**: ワイルドカード（`*.github.com`）は非対応です。`*` を含むエントリはポリシー読み込み時にエラーになります。サブドメインは個別に列挙してください。
 >
 > **CIDR**: CIDR エントリは eBPF の LPM trie に直接シードされるため、サブネット内の全アドレスが DNS 解決なしで許可されます。
 >

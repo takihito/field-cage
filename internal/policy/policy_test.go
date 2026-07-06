@@ -73,7 +73,7 @@ allowlist:
 	if !e.Allow("codeload.github.com", net.ParseIP("185.199.108.1")) {
 		t.Error("expected codeload.github.com to be allowed")
 	}
-	// wildcard-style entries are treated as literal domain names and won't match
+	// unlisted subdomains do not match (exact matching, no wildcards)
 	if e.Allow("api.github.com", net.ParseIP("140.82.121.5")) {
 		t.Error("expected api.github.com to be denied (not in allowlist)")
 	}
@@ -346,6 +346,29 @@ func TestInvalidMode(t *testing.T) {
 	_, err := newEngine(Config{Mode: "invalid"})
 	if err == nil {
 		t.Error("expected error for invalid mode")
+	}
+}
+
+func TestModeUnspecified(t *testing.T) {
+	// A policy file may omit mode entirely; the effective mode is resolved by
+	// the caller (--mode flag, or audit default). Loading must not fail.
+	e, err := newEngine(Config{Allowlist: []string{"github.com"}})
+	if err != nil {
+		t.Fatalf("unexpected error for unspecified mode: %v", err)
+	}
+	if e.Mode() != "" {
+		t.Errorf("Mode() = %q, want empty (unspecified)", e.Mode())
+	}
+}
+
+func TestWildcardEntryRejected(t *testing.T) {
+	// Matching is exact, so a wildcard entry would silently never match —
+	// dangerous in block mode. Loading must fail fast instead.
+	for _, entry := range []string{"*.github.com", "api.*.com", "*"} {
+		_, err := newEngine(Config{Mode: ModeBlock, Allowlist: []string{entry}})
+		if err == nil {
+			t.Errorf("newEngine with wildcard entry %q: expected error, got nil", entry)
+		}
 	}
 }
 

@@ -35,7 +35,8 @@ verdict=DENY(no-domain)      pid=1236   tgid=1236   comm=curl             dst=93
 ## Policy file
 
 ```yaml
-mode: block          # audit or block
+mode: block          # optional: audit or block; defaults to audit when omitted
+                     # (the --mode flag overrides this in either case)
 allow_all_dns: false # optional; see "DNS handling" below (default false)
 
 allowlist:
@@ -50,7 +51,7 @@ allowlist:
   - 2001:db8::/32       # IPv6 CIDR subnet
 ```
 
-> **Note**: Wildcards (`*.github.com`) are not supported. List each subdomain explicitly.
+> **Note**: Wildcards (`*.github.com`) are not supported — an entry containing `*` is rejected when the policy is loaded. List each subdomain explicitly.
 >
 > **CIDR**: A CIDR entry seeds the eBPF LPM trie directly, so all addresses in the subnet are permitted without per-IP DNS resolution.
 >

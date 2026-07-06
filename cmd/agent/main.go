@@ -48,12 +48,13 @@ func main() {
 }
 
 // resolveMode determines the effective enforcement mode: the --mode flag
-// overrides the mode from the policy file; without either, audit is the
-// default. Block mode is default-deny, so it requires a policy: without an
-// allowlist every outbound connection would be rejected, bricking the runner.
+// overrides the mode from the policy file; a policy file may omit mode
+// entirely, and without either, audit is the default. Block mode is
+// default-deny, so it requires a policy: without an allowlist every outbound
+// connection would be rejected, bricking the runner.
 func resolveMode(flagMode string, engine *policy.Engine) (policy.Mode, error) {
 	mode := policy.ModeAudit
-	if engine != nil {
+	if engine != nil && engine.Mode() != "" {
 		mode = engine.Mode()
 	}
 	if flagMode != "" {
