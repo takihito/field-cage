@@ -188,6 +188,52 @@ nameserver
 	}
 }
 
+func TestResolversFrom(t *testing.T) {
+	stubEtc := []byte("nameserver 127.0.0.53\noptions edns0 trust-ad\n")
+	realEtc := []byte("nameserver 10.0.0.2\nnameserver 2001:4860:4860::8888\n")
+	run := []byte("# managed by systemd-resolved\nnameserver 168.63.129.16\nnameserver 10.0.0.2\n")
+
+	toStrings := func(ips []net.IP) []string {
+		var out []string
+		for _, ip := range ips {
+			out = append(out, ip.String())
+		}
+		return out
+	}
+
+	cases := []struct {
+		name string
+		etc  []byte
+		run  []byte
+		want []string
+	}{
+		// Loopback-only stub (systemd-resolved): upstream servers are merged in
+		// so the stub daemon's own outbound DNS is permitted under enforcement.
+		{"stub merges upstream", stubEtc, run, []string{"127.0.0.53", "168.63.129.16", "10.0.0.2"}},
+		// Real resolvers in /etc/resolv.conf: the upstream file is ignored.
+		{"real etc ignores run", realEtc, run, []string{"10.0.0.2", "2001:4860:4860::8888"}},
+		// No nameservers at all in /etc: fall back to the upstream file.
+		{"empty etc uses run", []byte("search example.com\n"), run, []string{"168.63.129.16", "10.0.0.2"}},
+		// Neither file yields anything.
+		{"both empty", nil, nil, nil},
+		// Duplicates across files are removed.
+		{"dedupe", []byte("nameserver 127.0.0.53\nnameserver 127.0.0.53\n"), []byte("nameserver 8.8.8.8\nnameserver 8.8.8.8\n"), []string{"127.0.0.53", "8.8.8.8"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := toStrings(resolversFrom(tc.etc, tc.run))
+			if len(got) != len(tc.want) {
+				t.Fatalf("resolversFrom = %v, want %v", got, tc.want)
+			}
+			for i := range got {
+				if got[i] != tc.want[i] {
+					t.Errorf("resolversFrom[%d] = %s, want %s (full: %v)", i, got[i], tc.want[i], got)
+				}
+			}
+		})
+	}
+}
+
 func TestIsTrustedSourceIP(t *testing.T) {
 	trusted := map[string]struct{}{"8.8.8.8": {}}
 	cases := []struct {

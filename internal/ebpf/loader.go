@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"os"
 
 	ciliumebpf "github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
@@ -309,20 +308,23 @@ func (w *Watcher) SetAllowAllDNS(enabled bool) error {
 	return nil
 }
 
-// seedResolvers reads /etc/resolv.conf and permits DNS (port 53) to each
-// configured non-loopback nameserver. On read failure or when no nameservers
-// are found, only loopback DNS is permitted (fail-closed); any external
-// resolver would then be denied, which is logged so a broken name-resolution
-// setup can be diagnosed.
+// seedResolvers permits DNS (port 53) to each configured non-loopback
+// nameserver, including the upstream servers behind a systemd-resolved
+// loopback stub (see SystemResolvers) — the stub daemon's own outbound
+// queries fall under root-cgroup enforcement, so its upstreams must be
+// permitted or resolution through the stub would fail. On discovery failure
+// or when no nameservers are found, only loopback DNS is permitted
+// (fail-closed); this is logged so a broken name-resolution setup can be
+// diagnosed.
 func (w *Watcher) seedResolvers() {
-	data, err := os.ReadFile("/etc/resolv.conf")
+	resolvers, err := SystemResolvers()
 	if err != nil {
-		log.Printf("field-cage: read /etc/resolv.conf for DNS resolver allowlist failed; "+
+		log.Printf("field-cage: discover DNS resolvers failed; "+
 			"only loopback DNS will be permitted under block mode: %v", err)
 		return
 	}
 	seeded := 0
-	for _, ip := range parseResolvConf(data) {
+	for _, ip := range resolvers {
 		if ip.IsLoopback() {
 			continue // loopback is always permitted by the program
 		}
@@ -333,7 +335,7 @@ func (w *Watcher) seedResolvers() {
 		seeded++
 	}
 	if seeded == 0 {
-		log.Printf("field-cage: no non-loopback nameservers seeded from /etc/resolv.conf; " +
+		log.Printf("field-cage: no non-loopback nameservers discovered; " +
 			"only loopback DNS is permitted under block mode (set allow_all_dns: true to relax)")
 	}
 }

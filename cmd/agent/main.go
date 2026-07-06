@@ -129,6 +129,7 @@ func run(configPath, flagMode string) error {
 	if engine != nil {
 		allower = engine
 	}
+	dnsExempt := dnsExemptFor(engine)
 
 	readErr := make(chan error, 1)
 	go func() {
@@ -139,7 +140,7 @@ func run(configPath, flagMode string) error {
 				return
 			}
 
-			verdict := report.VerdictFor(ev.DPort, ev.DAddr, ev.Domain, allower)
+			verdict := report.VerdictFor(ev.DPort, ev.DAddr, ev.Domain, allower, dnsExempt)
 			fmt.Println(report.Line{
 				Verdict: verdict,
 				PID:     ev.PID,
@@ -158,6 +159,40 @@ func run(configPath, flagMode string) error {
 		return fmt.Errorf("reader error: %w", err)
 	}
 	return nil
+}
+
+// dnsExemptFor builds the port-53 exemption predicate used for verdict
+// reporting, mirroring the kernel enforcement: with no policy every DNS
+// destination is exempt (nil predicate); with allow_all_dns everything is
+// exempt; otherwise only loopback and the discovered system resolvers are.
+// Non-exempt port-53 connections are evaluated against the allowlist, so a
+// denied DNS connection is reported as DENY rather than hidden as SKIP(dns).
+func dnsExemptFor(engine *policy.Engine) report.DNSExempt {
+	if engine == nil {
+		return nil // no policy: port 53 is unrestricted, mirror as exempt
+	}
+	if engine.AllowAllDNS() {
+		return func(net.IP) bool { return true }
+	}
+	resolvers, err := ebpf.SystemResolvers()
+	if err != nil {
+		log.Printf("field-cage: discover DNS resolvers for verdict reporting failed; "+
+			"non-loopback DNS will be reported by allowlist policy: %v", err)
+	}
+	set := make(map[string]struct{}, len(resolvers))
+	for _, ip := range resolvers {
+		set[ip.String()] = struct{}{}
+	}
+	return func(ip net.IP) bool {
+		if ip == nil {
+			return false
+		}
+		if ip.IsLoopback() {
+			return true
+		}
+		_, ok := set[ip.String()] // v4-mapped IPv6 canonicalizes to dotted quad
+		return ok
+	}
 }
 
 // seedAllowlist primes the enforcement maps with the policy's explicit IP and
