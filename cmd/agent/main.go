@@ -111,13 +111,19 @@ func run(configPath, flagMode string) error {
 	if mode == policy.ModeBlock {
 		// Enforcement is default-deny: the cgroup/connect4 and cgroup/connect6
 		// programs reject any outbound connection whose destination IP is not on
-		// the allowlist. DNS (port 53) and loopback (127.0.0.0/8 and ::1) are
-		// always permitted so name resolution and local services keep working.
-		// Limitation: a connection to an allowlisted domain may be denied on the
-		// very first attempt if the application connects before the observed DNS
-		// response is applied to the map (fail-closed; the application's retry
-		// succeeds).
-		log.Printf("field-cage: block mode active (default-deny; DNS and loopback always allowed; IPv4+IPv6)")
+		// the allowlist. Loopback (127.0.0.0/8 and ::1) is always permitted so
+		// local services keep working. DNS (port 53) is permitted only to
+		// trusted resolvers and loopback — plus allowlisted IPs like any other
+		// port — unless allow_all_dns opts back into unconditional port-53
+		// access. Limitation: a connection to an allowlisted domain may be
+		// denied on the very first attempt if the application connects before
+		// the observed DNS response is applied to the map (fail-closed; the
+		// application's retry succeeds).
+		dnsLabel := "DNS restricted to trusted resolvers"
+		if engine.AllowAllDNS() {
+			dnsLabel = "DNS unrestricted (allow_all_dns)"
+		}
+		log.Printf("field-cage: block mode active (default-deny; loopback always allowed; %s; IPv4+IPv6)", dnsLabel)
 	}
 
 	sig := make(chan os.Signal, 1)

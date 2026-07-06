@@ -166,14 +166,19 @@ func TestParseResolvConf(t *testing.T) {
 nameserver 127.0.0.53
 nameserver 8.8.8.8
 nameserver 2001:4860:4860::8888
+nameserver fe80::1%eth0
+nameserver [2001:db8::5]
 options edns0
 search example.com
 nameserver
 `)
 	got := parseResolvConf(data)
 	// Both IPv4 and IPv6 nameservers are returned (resolver enforcement and
-	// live-allowlisting source validation both consume this list).
-	want := []string{"127.0.0.53", "8.8.8.8", "2001:4860:4860::8888"}
+	// live-allowlisting source validation both consume this list). A zone
+	// suffix ("%eth0") and surrounding brackets are stripped before parsing —
+	// the zone lives in sin6_scope_id, not the address, so the plain address
+	// is what enforcement and source matching need.
+	want := []string{"127.0.0.53", "8.8.8.8", "2001:4860:4860::8888", "fe80::1", "2001:db8::5"}
 	if len(got) != len(want) {
 		t.Fatalf("parseResolvConf returned %d entries, want %d: %v", len(got), len(want), got)
 	}

@@ -77,7 +77,14 @@ func parseResolvConf(data []byte) []net.IP {
 		if len(fields) < 2 || fields[0] != "nameserver" {
 			continue
 		}
-		if ip := net.ParseIP(fields[1]); ip != nil {
+		host := strings.TrimSuffix(strings.TrimPrefix(fields[1], "["), "]")
+		// Strip an IPv6 zone suffix (e.g. "fe80::1%eth0"): net.ParseIP rejects
+		// it, and the zone is carried in sin6_scope_id rather than the address,
+		// so the plain address is what enforcement and source matching need.
+		if i := strings.IndexByte(host, '%'); i >= 0 {
+			host = host[:i]
+		}
+		if ip := net.ParseIP(host); ip != nil {
 			ips = append(ips, ip)
 		}
 	}

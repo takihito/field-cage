@@ -1,11 +1,12 @@
 // eBPF cgroup/connect4 + connect6 programs for field-cage enforcement mode.
 // Default-deny allowlist model: a connection is rejected with EPERM unless its
 // destination is explicitly permitted. Loopback is always allowed. DNS
-// (port 53) is permitted only to trusted resolvers (seeded from
-// /etc/resolv.conf) so that a port-53 listener on an arbitrary host cannot be
-// used as a general outbound tunnel; this can be relaxed to "allow any port-53
-// destination" via the config map (opt-in, default off). Every other
-// destination must be present in the allowed_ips / allowed_ips6 maps.
+// (port 53) is additionally permitted to trusted resolvers (seeded from
+// /etc/resolv.conf) so that name resolution works without turning port 53
+// into a general outbound tunnel to arbitrary hosts; this can be relaxed to
+// "allow any port-53 destination" via the config map (opt-in, default off).
+// Any destination in the allowed_ips / allowed_ips6 maps is reachable on any
+// port, including 53; everything else is denied.
 #include <linux/bpf.h>
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_endian.h>
@@ -165,8 +166,11 @@ int block_connect6(struct bpf_sock_addr *ctx)
 		return 0; // deny
 	}
 
-	// Native IPv6 DNS (port 53): permit only to trusted resolvers unless
-	// allow_all_dns is set.
+	// Native IPv6 DNS (port 53): permit to trusted resolvers (or any
+	// destination when allow_all_dns is set). A non-resolver port-53
+	// destination is not rejected here — it falls through to the allowlist
+	// lookup below like any other port, so an explicitly allowlisted IPv6
+	// address is still reachable on port 53; otherwise default-deny applies.
 	if (ctx->user_port == bpf_htons(53)) {
 		if (dns_allow_all())
 			return 1;
