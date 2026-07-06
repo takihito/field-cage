@@ -4,7 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"os"
 	"os/signal"
@@ -31,6 +31,9 @@ var (
 )
 
 func main() {
+	// Diagnostics go to stderr via slog; the per-connection verdict lines are
+	// written separately to stdout in a stable format (see report.Line).
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	flag.Parse()
 
 	if *showVersion {
@@ -39,7 +42,8 @@ func main() {
 	}
 
 	if err := run(*configPath, *modeFlag); err != nil {
-		log.Fatalf("field-cage: %v", err)
+		slog.Error("agent failed", "error", err)
+		os.Exit(1)
 	}
 }
 
@@ -92,7 +96,7 @@ func run(configPath, flagMode string) error {
 	}
 	defer func() {
 		if err := watcher.Close(); err != nil {
-			log.Printf("field-cage: close error: %v", err)
+			slog.Warn("close error", "error", err)
 		}
 	}()
 
@@ -107,7 +111,7 @@ func run(configPath, flagMode string) error {
 	if engine == nil {
 		modeLabel += " (no policy)"
 	}
-	fmt.Fprintf(os.Stderr, "field-cage %s: watching outbound connections [mode=%s] (Ctrl+C to stop)\n", version, modeLabel)
+	slog.Info("watching outbound connections (Ctrl+C to stop)", "version", version, "mode", modeLabel)
 	if mode == policy.ModeBlock {
 		// Enforcement is default-deny: the cgroup/connect4 and cgroup/connect6
 		// programs reject any outbound connection whose destination IP is not on
@@ -119,11 +123,11 @@ func run(configPath, flagMode string) error {
 		// denied on the very first attempt if the application connects before
 		// the observed DNS response is applied to the map (fail-closed; the
 		// application's retry succeeds).
-		dnsLabel := "DNS restricted to trusted resolvers"
+		dnsLabel := "restricted to trusted resolvers"
 		if engine.AllowAllDNS() {
-			dnsLabel = "DNS unrestricted (allow_all_dns)"
+			dnsLabel = "unrestricted (allow_all_dns)"
 		}
-		log.Printf("field-cage: block mode active (default-deny; loopback always allowed; %s; IPv4+IPv6)", dnsLabel)
+		slog.Info("block mode active (default-deny; loopback always allowed; IPv4+IPv6)", "dns", dnsLabel)
 	}
 
 	sig := make(chan os.Signal, 1)
@@ -160,7 +164,7 @@ func run(configPath, flagMode string) error {
 
 	select {
 	case <-sig:
-		fmt.Fprintln(os.Stderr, "\nfield-cage: shutting down")
+		slog.Info("shutting down")
 	case err := <-readErr:
 		return fmt.Errorf("reader error: %w", err)
 	}
@@ -182,8 +186,8 @@ func dnsExemptFor(engine *policy.Engine) report.DNSExempt {
 	}
 	resolvers, err := ebpf.SystemResolvers()
 	if err != nil {
-		log.Printf("field-cage: discover DNS resolvers for verdict reporting failed; "+
-			"non-loopback DNS will be reported by allowlist policy: %v", err)
+		slog.Warn("discover DNS resolvers for verdict reporting failed; "+
+			"non-loopback DNS will be reported by allowlist policy", "error", err)
 	}
 	set := make(map[string]struct{}, len(resolvers))
 	for _, ip := range resolvers {
@@ -213,16 +217,16 @@ func seedAllowlist(w *ebpf.Watcher, engine *policy.Engine) {
 	// resolvers and loopback; allow_all_dns opts back into permitting any
 	// port-53 destination.
 	if err := w.SetAllowAllDNS(engine.AllowAllDNS()); err != nil {
-		log.Printf("field-cage: set allow_all_dns: %v", err)
+		slog.Warn("set allow_all_dns failed", "error", err)
 	}
 	for _, ip := range engine.IPs() {
 		if err := w.AllowIP(ip); err != nil {
-			log.Printf("field-cage: seed allowed IP %s: %v", ip, err)
+			slog.Warn("seed allowed IP failed", "ip", ip.String(), "error", err)
 		}
 	}
 	for _, cidr := range engine.CIDRs() {
 		if err := w.AllowCIDR(cidr); err != nil {
-			log.Printf("field-cage: seed allowed CIDR %s: %v", cidr, err)
+			slog.Warn("seed allowed CIDR failed", "cidr", cidr.String(), "error", err)
 		}
 	}
 	var resolver net.Resolver
@@ -234,12 +238,12 @@ func seedAllowlist(w *ebpf.Watcher, engine *policy.Engine) {
 		ips, err := resolver.LookupIP(ctx, "ip", domain)
 		cancel()
 		if err != nil {
-			log.Printf("field-cage: seed: resolve %s failed (will rely on observed DNS): %v", domain, err)
+			slog.Warn("seed: resolve failed (will rely on observed DNS)", "domain", domain, "error", err)
 			continue
 		}
 		for _, ip := range ips {
 			if err := w.AllowIP(ip); err != nil {
-				log.Printf("field-cage: seed allowed IP %s (%s): %v", ip, domain, err)
+				slog.Warn("seed allowed IP failed", "ip", ip.String(), "domain", domain, "error", err)
 			}
 		}
 	}

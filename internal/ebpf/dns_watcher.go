@@ -6,7 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"syscall"
 
@@ -68,7 +68,7 @@ func newDNSWatcher(cache *DNSCache, isAllowed func(string) bool, allow func(net.
 	if allow != nil {
 		resolvers, err := SystemResolvers()
 		if err != nil {
-			log.Printf("field-cage: discover DNS resolvers failed; live DNS allowlisting limited to loopback responses: %v", err)
+			slog.Warn("discover DNS resolvers failed; live DNS allowlisting limited to loopback responses", "error", err)
 		}
 		w.trustedResolvers = make(map[string]struct{})
 		for _, ip := range resolvers {
@@ -89,6 +89,14 @@ func (w *dnsWatcher) run() {
 	for {
 		record, err := w.reader.Read()
 		if err != nil {
+			// ringbuf.ErrClosed means Close() was called — a normal shutdown.
+			// Anything else silently stopping this loop would freeze the DNS
+			// cache and, in block mode, halt live allowlisting: rotating IPs of
+			// allowlisted domains would start being denied with no visible
+			// cause. Make that failure loud.
+			if !errors.Is(err, ringbuf.ErrClosed) {
+				slog.Error("DNS watcher stopped unexpectedly; IP-to-domain mapping and live DNS allowlisting halted", "error", err)
+			}
 			return
 		}
 		// Wire layout (see struct dns_event in bpf/dns.c):
@@ -123,7 +131,7 @@ func (w *dnsWatcher) run() {
 			// the application's retry succeeds once the map is updated.
 			if allowDomain {
 				if err := w.allow(ip); err != nil {
-					log.Printf("field-cage: allow resolved IP %s for %s: %v", ip, domain, err)
+					slog.Warn("allow resolved IP failed", "ip", ip.String(), "domain", domain, "error", err)
 				}
 			}
 		}
