@@ -35,7 +35,8 @@ verdict=DENY(no-domain)      pid=1236   tgid=1236   comm=curl             dst=93
 ## Policy file
 
 ```yaml
-mode: block   # audit or block
+mode: block          # audit or block
+allow_all_dns: false # optional; see "DNS handling" below (default false)
 
 allowlist:
   - github.com
@@ -52,6 +53,8 @@ allowlist:
 > **Note**: Wildcards (`*.github.com`) are not supported. List each subdomain explicitly.
 >
 > **CIDR**: A CIDR entry seeds the eBPF LPM trie directly, so all addresses in the subnet are permitted without per-IP DNS resolution.
+>
+> **DNS handling**: By default, port 53 is permitted only to the resolvers configured in `/etc/resolv.conf` plus loopback — this prevents a port-53 listener on an arbitrary host from being used as a general outbound tunnel. Set `allow_all_dns: true` to permit port 53 to any destination (the pre-0.x behavior). Even under the default, DNS *tunneling* through a legitimate resolver (data encoded in subdomains, resolved recursively) is not blocked; see Limitations.
 
 ## Usage
 
@@ -181,12 +184,12 @@ Block mode is **default-deny**: the `cgroup/connect4` and `cgroup/connect6` prog
 1. **Startup seeding** — explicit IP and CIDR entries are added directly, and each allowlisted domain is resolved (A and AAAA) and its addresses added.
 2. **Live DNS observation** — when a DNS response for an allowlisted domain is seen on the wire, its A/AAAA-record IPs are added to the allowlist before the application connects. Only responses originating from a configured resolver (the `nameserver` entries in `/etc/resolv.conf`) or from loopback are trusted for this; responses from any other source are cached for logging but never extend the kernel allowlist, so a forged response with a spoofed source port 53 cannot poison it.
 
-DNS (destination port 53) and loopback (`127.0.0.0/8` and `::1`) are always permitted so that name resolution and local services keep working. A policy file is required in block mode; without one the agent refuses to start rather than deny all traffic.
+Loopback (`127.0.0.0/8` and `::1`) is always permitted so that local services keep working. DNS (destination port 53) is permitted only to the system's resolvers (plus loopback) so that name resolution works without turning port 53 into a general outbound tunnel to arbitrary hosts; set `allow_all_dns: true` in the policy to restore unconditional port-53 access. Resolvers are discovered from `/etc/resolv.conf`; when it lists only a loopback stub (systemd-resolved's `127.0.0.53`), the stub's upstream servers from `/run/systemd/resolve/resolv.conf` are permitted as well — enforcement applies to the stub daemon's own outbound queries too, so its upstreams must be reachable. If no resolvers can be determined at startup, only loopback DNS is permitted (fail-closed). Denied port-53 connections are reported as `DENY`, not `SKIP(dns)`. A policy file is required in block mode; without one the agent refuses to start rather than deny all traffic.
 
 ## Limitations
 
 - **First-connection race (fail-closed)**: a connection to an allowlisted domain may be denied on the very first attempt if the application connects before the observed DNS response is applied to the map. This fails *closed* (the connection is denied, not leaked); the application's retry succeeds once the map is updated. Startup seeding avoids this for domains resolvable at launch.
-- **DNS over port 53 is always allowed**: this is required for name resolution to function under default-deny. As a side effect, low-bandwidth exfiltration via DNS tunneling is not blocked (it is still visible in the DNS monitoring logs).
+- **DNS tunneling through a legitimate resolver is not blocked**: port 53 to configured resolvers (and loopback) is permitted so name resolution works. An attacker can still encode data in subdomains and have a trusted resolver recursively resolve them, which no resolver-IP restriction can prevent. This is low-bandwidth and remains visible in the DNS monitoring logs. Note the default *does* block the coarser abuse of pointing port 53 at an arbitrary host as a direct tunnel — set `allow_all_dns: true` to disable that restriction.
 - **Live allowlisting trusts resolver-sourced responses**: only DNS responses from a configured resolver or loopback extend the allowlist. Forging a trusted response requires binding source port 53 (`CAP_NET_BIND_SERVICE`) or a raw socket (`CAP_NET_RAW`) — capabilities a normal build step does not hold; an attacker who already has them can subvert enforcement by other means.
 - **Live allowlisting only observes plaintext UDP DNS over IPv4 transport (port 53)**: DNS carried over IPv6 transport, TCP, or encrypted (DoH/DoT) is not observed, so it cannot extend the allowlist — this applies to both A and AAAA records (AAAA answers *are* observed when the query travels over IPv4 transport, the common case). Domains resolved via unobserved channels are only covered by startup seeding; if their addresses rotate afterwards, block mode will deny the new IPs (fail-closed). Keep such domains pinned by IP in the policy, or ensure they resolve via plaintext UDP over IPv4.
 - **DNS packet monitoring requires `CAP_NET_RAW`**: In block mode, failure to start DNS packet monitoring is fatal (fail-closed). In audit mode it is best-effort.
@@ -203,9 +206,9 @@ DNS (destination port 53) and loopback (`127.0.0.0/8` and `::1`) are always perm
 │    → pushes DNS responses to ring buffer    │
 │                                             │
 │  cgroup/connect4 + connect6 (block mode)    │
-│    → default-deny; allows port 53, loopback,│
-│      and IPs in the allowed_ips /           │
-│      allowed_ips6 LPM tries                 │
+│    → default-deny; allows loopback, port 53 │
+│      to trusted resolvers, and IPs in the   │
+│      allowed_ips / allowed_ips6 LPM tries   │
 └─────────────────────────────────────────────┘
                      ↕ cilium/ebpf
 ┌─────────────────────────────────────────────┐

@@ -111,13 +111,19 @@ func run(configPath, flagMode string) error {
 	if mode == policy.ModeBlock {
 		// Enforcement is default-deny: the cgroup/connect4 and cgroup/connect6
 		// programs reject any outbound connection whose destination IP is not on
-		// the allowlist. DNS (port 53) and loopback (127.0.0.0/8 and ::1) are
-		// always permitted so name resolution and local services keep working.
-		// Limitation: a connection to an allowlisted domain may be denied on the
-		// very first attempt if the application connects before the observed DNS
-		// response is applied to the map (fail-closed; the application's retry
-		// succeeds).
-		log.Printf("field-cage: block mode active (default-deny; DNS and loopback always allowed; IPv4+IPv6)")
+		// the allowlist. Loopback (127.0.0.0/8 and ::1) is always permitted so
+		// local services keep working. DNS (port 53) is permitted only to
+		// trusted resolvers and loopback — plus allowlisted IPs like any other
+		// port — unless allow_all_dns opts back into unconditional port-53
+		// access. Limitation: a connection to an allowlisted domain may be
+		// denied on the very first attempt if the application connects before
+		// the observed DNS response is applied to the map (fail-closed; the
+		// application's retry succeeds).
+		dnsLabel := "DNS restricted to trusted resolvers"
+		if engine.AllowAllDNS() {
+			dnsLabel = "DNS unrestricted (allow_all_dns)"
+		}
+		log.Printf("field-cage: block mode active (default-deny; loopback always allowed; %s; IPv4+IPv6)", dnsLabel)
 	}
 
 	sig := make(chan os.Signal, 1)
@@ -129,6 +135,7 @@ func run(configPath, flagMode string) error {
 	if engine != nil {
 		allower = engine
 	}
+	dnsExempt := dnsExemptFor(engine)
 
 	readErr := make(chan error, 1)
 	go func() {
@@ -139,7 +146,7 @@ func run(configPath, flagMode string) error {
 				return
 			}
 
-			verdict := report.VerdictFor(ev.DPort, ev.DAddr, ev.Domain, allower)
+			verdict := report.VerdictFor(ev.DPort, ev.DAddr, ev.Domain, allower, dnsExempt)
 			fmt.Println(report.Line{
 				Verdict: verdict,
 				PID:     ev.PID,
@@ -160,6 +167,40 @@ func run(configPath, flagMode string) error {
 	return nil
 }
 
+// dnsExemptFor builds the port-53 exemption predicate used for verdict
+// reporting, mirroring the kernel enforcement: with no policy every DNS
+// destination is exempt (nil predicate); with allow_all_dns everything is
+// exempt; otherwise only loopback and the discovered system resolvers are.
+// Non-exempt port-53 connections are evaluated against the allowlist, so a
+// denied DNS connection is reported as DENY rather than hidden as SKIP(dns).
+func dnsExemptFor(engine *policy.Engine) report.DNSExempt {
+	if engine == nil {
+		return nil // no policy: port 53 is unrestricted, mirror as exempt
+	}
+	if engine.AllowAllDNS() {
+		return func(net.IP) bool { return true }
+	}
+	resolvers, err := ebpf.SystemResolvers()
+	if err != nil {
+		log.Printf("field-cage: discover DNS resolvers for verdict reporting failed; "+
+			"non-loopback DNS will be reported by allowlist policy: %v", err)
+	}
+	set := make(map[string]struct{}, len(resolvers))
+	for _, ip := range resolvers {
+		set[ip.String()] = struct{}{}
+	}
+	return func(ip net.IP) bool {
+		if ip == nil {
+			return false
+		}
+		if ip.IsLoopback() {
+			return true
+		}
+		_, ok := set[ip.String()] // v4-mapped IPv6 canonicalizes to dotted quad
+		return ok
+	}
+}
+
 // seedAllowlist primes the enforcement maps with the policy's explicit IP and
 // CIDR entries and the current IPv4/IPv6 addresses of each allowlisted domain.
 // This lets
@@ -168,6 +209,12 @@ func run(configPath, flagMode string) error {
 // logged and skipped; the domain can still be permitted later when its DNS
 // response is observed.
 func seedAllowlist(w *ebpf.Watcher, engine *policy.Engine) {
+	// Reflect the DNS policy: by default port 53 is restricted to configured
+	// resolvers and loopback; allow_all_dns opts back into permitting any
+	// port-53 destination.
+	if err := w.SetAllowAllDNS(engine.AllowAllDNS()); err != nil {
+		log.Printf("field-cage: set allow_all_dns: %v", err)
+	}
 	for _, ip := range engine.IPs() {
 		if err := w.AllowIP(ip); err != nil {
 			log.Printf("field-cage: seed allowed IP %s: %v", ip, err)

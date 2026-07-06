@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"os"
 	"syscall"
 
 	"github.com/cilium/ebpf/ringbuf"
@@ -67,11 +66,19 @@ func newDNSWatcher(cache *DNSCache, isAllowed func(string) bool, allow func(net.
 	// spoofed source port 53) are still cached for logging but never extend the
 	// kernel allowlist.
 	if allow != nil {
-		data, err := os.ReadFile("/etc/resolv.conf")
+		resolvers, err := SystemResolvers()
 		if err != nil {
-			log.Printf("field-cage: read /etc/resolv.conf failed; live DNS allowlisting limited to loopback responses: %v", err)
+			log.Printf("field-cage: discover DNS resolvers failed; live DNS allowlisting limited to loopback responses: %v", err)
 		}
-		w.trustedResolvers = parseResolvConf(data)
+		w.trustedResolvers = make(map[string]struct{})
+		for _, ip := range resolvers {
+			// Includes the upstreams behind a systemd-resolved stub: their
+			// responses to the stub are what actually appears on the wire, so
+			// trusting them is what lets live allowlisting work on stub hosts.
+			// IPv6 entries never match today (monitoring observes IPv4 transport
+			// only) but are harmless and keep this set in sync with enforcement.
+			w.trustedResolvers[ip.String()] = struct{}{}
+		}
 	}
 
 	go w.run()

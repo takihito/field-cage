@@ -325,3 +325,79 @@ func TestBlockWatcherIPv4MappedConnect6(t *testing.T) {
 		t.Fatalf("after AllowIP(198.51.100.7), v4-mapped connect should not be EPERM, got: %v", err)
 	}
 }
+
+// TestBlockWatcherDNSResolverRestriction verifies that under the default policy
+// port 53 is permitted only to trusted resolvers: a port-53 connection to a
+// non-resolver host is denied with EPERM, and AllowResolver lifts the denial.
+// This closes the "port 53 as a general tunnel" gap where any host on port 53
+// was previously allowed unconditionally.
+func TestBlockWatcherDNSResolverRestriction(t *testing.T) {
+	cgroupPath := setupTestCgroup(t)
+	denyAll := func(string) bool { return false }
+	w, err := ebpf.NewBlockWatcher(cgroupPath, denyAll)
+	if err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			t.Skipf("skipping: insufficient privileges (needs CAP_BPF/CAP_NET_RAW/root): %v", err)
+		}
+		t.Fatalf("NewBlockWatcher: %v", err)
+	}
+	defer w.Close()
+
+	// TEST-NET-1 (RFC 5737): not a configured resolver and not allowlisted.
+	const dns = "192.0.2.53:53"
+
+	// Default (resolver-restricted): port 53 to a non-resolver is denied.
+	_, err = net.DialTimeout("tcp4", dns, 2*time.Second)
+	if !errors.Is(err, syscall.EPERM) {
+		t.Fatalf("expected EPERM for port-53 to non-resolver %s, got: %v", dns, err)
+	}
+
+	// After marking it a resolver, port 53 to it is permitted; the connect then
+	// proceeds to the network and fails with a non-EPERM error (unroutable).
+	if err := w.AllowResolver(net.ParseIP("192.0.2.53")); err != nil {
+		t.Fatalf("AllowResolver: %v", err)
+	}
+	_, err = net.DialTimeout("tcp4", dns, 2*time.Second)
+	if errors.Is(err, syscall.EPERM) {
+		t.Fatalf("after AllowResolver, port-53 to %s must not be EPERM, got: %v", dns, err)
+	}
+}
+
+// TestBlockWatcherAllowAllDNS verifies the allow_all_dns opt-in: once enabled,
+// any port-53 destination is permitted, while non-53 ports remain default-deny.
+func TestBlockWatcherAllowAllDNS(t *testing.T) {
+	cgroupPath := setupTestCgroup(t)
+	denyAll := func(string) bool { return false }
+	w, err := ebpf.NewBlockWatcher(cgroupPath, denyAll)
+	if err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			t.Skipf("skipping: insufficient privileges (needs CAP_BPF/CAP_NET_RAW/root): %v", err)
+		}
+		t.Fatalf("NewBlockWatcher: %v", err)
+	}
+	defer w.Close()
+
+	const dnsAddr = "198.51.100.53:53" // TEST-NET-2, not a resolver
+
+	// Default: a non-resolver port-53 destination is denied.
+	_, err = net.DialTimeout("tcp4", dnsAddr, 2*time.Second)
+	if !errors.Is(err, syscall.EPERM) {
+		t.Fatalf("expected EPERM before allow_all_dns, got: %v", err)
+	}
+
+	// Enable the opt-in: any port-53 destination is now permitted.
+	if err := w.SetAllowAllDNS(true); err != nil {
+		t.Fatalf("SetAllowAllDNS: %v", err)
+	}
+	_, err = net.DialTimeout("tcp4", dnsAddr, 2*time.Second)
+	if errors.Is(err, syscall.EPERM) {
+		t.Fatalf("after allow_all_dns=true, port-53 to %s must not be EPERM, got: %v", dnsAddr, err)
+	}
+
+	// allow_all_dns is scoped to port 53: a non-53 port to the same host is
+	// still denied by default-deny.
+	_, err = net.DialTimeout("tcp4", "198.51.100.53:80", 2*time.Second)
+	if !errors.Is(err, syscall.EPERM) {
+		t.Fatalf("allow_all_dns must not affect non-53 ports; expected EPERM for :80, got: %v", err)
+	}
+}

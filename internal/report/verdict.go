@@ -18,8 +18,11 @@ const (
 	// VerdictAllow marks a connection permitted by the policy (or any
 	// connection when no policy is loaded).
 	VerdictAllow Verdict = "ALLOW"
-	// VerdictSkipDNS marks DNS traffic (port 53), which is excluded from
-	// enforcement at the eBPF level so name resolution keeps working.
+	// VerdictSkipDNS marks DNS traffic (port 53) that is exempt from policy
+	// evaluation: destined to a trusted resolver or loopback, or any port-53
+	// destination when allow_all_dns is set (or no policy is loaded). Port-53
+	// traffic to other destinations is NOT exempt — it is evaluated against
+	// the allowlist like any other connection and may be denied.
 	VerdictSkipDNS Verdict = "SKIP(dns)"
 	// VerdictSkipLoopback marks loopback traffic (127.0.0.0/8), which is
 	// excluded from enforcement at the eBPF level.
@@ -39,15 +42,23 @@ type Allower interface {
 	Allow(domain string, ip net.IP) bool
 }
 
+// DNSExempt reports whether a port-53 destination is exempt from policy
+// evaluation (trusted resolver, loopback, or allow_all_dns). A nil DNSExempt
+// means every port-53 destination is exempt, matching enforcement when no
+// policy is loaded.
+type DNSExempt func(ip net.IP) bool
+
 // VerdictFor computes the verdict for a captured connection.
 //
-// DNS (port 53) and loopback destinations are excluded from enforcement at
-// the eBPF level and are labelled SKIP rather than DENY to avoid misleading
-// the user into thinking the connection was blocked. domain may be empty if
+// Exempt DNS traffic (per dnsExempt) and loopback destinations are excluded
+// from enforcement at the eBPF level and are labelled SKIP rather than DENY
+// to avoid misleading the user into thinking the connection was blocked.
+// Non-exempt port-53 traffic is evaluated against the allowlist like any
+// other connection, mirroring the kernel programs. domain may be empty if
 // DNS resolution has not been observed for the destination IP.
-func VerdictFor(dport uint16, daddr net.IP, domain string, allow Allower) Verdict {
+func VerdictFor(dport uint16, daddr net.IP, domain string, allow Allower, dnsExempt DNSExempt) Verdict {
 	switch {
-	case dport == 53:
+	case dport == 53 && (dnsExempt == nil || dnsExempt(daddr)):
 		return VerdictSkipDNS
 	case daddr.IsLoopback():
 		return VerdictSkipLoopback
