@@ -21,24 +21,24 @@ Key goals:
 | Agent | Go 1.21+ |
 | eBPF programs | C, compiled via `bpf2go` |
 | eBPF Go bindings | `cilium/ebpf` |
-| DNS packet parsing | `google/gopacket` (if needed) |
+| DNS packet parsing | hand-written parser (`internal/ebpf/dns_parse.go`) |
 | Config format | YAML |
 | Distribution | GitHub Releases via GoReleaser, Composite Action (`action.yml`) |
 | Build | `CGO_ENABLED=0` fully static binary |
 
-## Planned Architecture
+## Architecture
 
 ### eBPF component (C)
 - `tracepoint/syscalls/sys_enter_connect` — hooks outbound connection attempts (portable across kernel versions and architectures; prefer over `kprobe/sys_connect` which is symbol-name-dependent). Also stores `bpf_ktime_get_ns()` in a `pending_connects` hash map keyed by `pid_tgid` (`u64`: upper 32 bits = tgid, lower 32 bits = pid) for connect-time measurement.
 - `tracepoint/syscalls/sys_exit_connect` — paired with `sys_enter_connect`; looks up the stored timestamp by `pid_tgid` and computes elapsed nanoseconds (`connect_ns`). This value is not currently logged because non-blocking sockets return EINPROGRESS in nanoseconds (rounds to 0ms).
-- `socket_filter` on port 53 — sniffs DNS packets to build IP→domain mapping
-- `cgroup/connect4` — in Block mode, enforces a default-deny allowlist: returns `0` (which makes the kernel fail the `connect()` with `EPERM`) for any destination not in the `allowed_ips` map. DNS (port 53) and loopback are always permitted. (An earlier design considered `bpf_override_return` on the connect tracepoint; `cgroup/connect4` was chosen instead because it enforces synchronously before the connection is made, closing the first-connection gap.)
+- `socket_filter` on port 53 — sniffs DNS response packets (UDP src port 53 over IPv4 transport) to build the IP→domain mapping; in Block mode, responses originating from a trusted resolver (or loopback) also extend the enforcement allowlist
+- `cgroup/connect4` + `cgroup/connect6` — in Block mode, enforce a default-deny allowlist: return `0` (which makes the kernel fail the `connect()` with `EPERM`) for any destination not in the `allowed_ips` / `allowed_ips6` LPM tries. Loopback is always permitted. DNS (port 53) is permitted only to trusted resolvers from `/etc/resolv.conf` (`dns_resolvers` / `dns_resolvers6` maps) unless `allow_all_dns: true` opts back into unconditional port-53 access. IPv4-mapped IPv6 destinations (`::ffff:a.b.c.d`) are checked against the IPv4 maps. (An earlier design considered `bpf_override_return` on the connect tracepoint; `cgroup/connect4` was chosen instead because it enforces synchronously before the connection is made, closing the first-connection gap.)
 
 ### Go agent
 - **eBPF Loader** — loads compiled eBPF programs into the kernel using `cilium/ebpf`
 - **DNS Cache** — in-memory map resolving IP addresses to domain names from eBPF events
 - **Policy Engine** — matches live traffic against YAML allowlist (exact domain match only, case-insensitive)
-- **Reporter** — writes structured logs to stdout (GitHub Actions format) or a file. Log format: `verdict=<V> pid=<P> tgid=<T> comm=<C> dst=<domain> (<ip>):<port>`. Verdict values: `ALLOW`, `DENY(no-domain)`, `DENY(not-in-policy)`, `SKIP(dns)`, `SKIP(loopback)`.
+- **Reporter** — writes per-connection verdict lines to stdout in a stable format: `verdict=<V> pid=<P> tgid=<T> comm=<C> dst=<domain> (<ip>):<port>`. Verdict values: `ALLOW`, `DENY(no-domain)`, `DENY(not-in-policy)`, `SKIP(dns)`, `SKIP(loopback)`. Diagnostics go to stderr via `log/slog`; keep the stdout format stable — CI smoke tests grep it.
 
 ### GitHub Action
 - Implemented as a Composite Action (`action.yml`), no TypeScript
@@ -90,3 +90,5 @@ Development milestones
 3. Enforcement: block unauthorized IPs via `cgroup/connect4` ✅
 4. GitHub Action: write `action.yml` and test in a real workflow ✅ (v0.0.2)
 5. Log quality: `SKIP(dns)` / `SKIP(loopback)` verdicts ✅; TCP connection timing (connect_ns is captured but not logged; pending decision on display format)
+6. IPv6 support: monitoring and block-mode enforcement (`cgroup/connect6`, `allowed_ips6`) ✅
+7. DNS hardening: port 53 restricted to trusted resolvers (opt-out via `allow_all_dns`), DNS-response source validation for live allowlisting ✅

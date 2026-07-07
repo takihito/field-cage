@@ -10,7 +10,7 @@ GitHub Actions ランナー上の外部通信を監視・制限する軽量 eBPF
 eBPF を通じて Linux カーネルレベルで全アウトバウンド接続をリアルタイムに監視します。DNS パケット監視により IP アドレスをドメイン名に自動変換し、YAML で定義した allowlist に照らして各接続の許否を判定します。
 
 - **Audit モード** — 全接続をログ出力するだけ。既存ワークフローへの影響なし
-- **Block モード** — デフォルト拒否（default-deny）。宛先 IP が allowlist に無い全アウトバウンド IPv4/IPv6 接続を拒否（プロセスへ `EPERM` を返す）。DNS（port 53）とループバックは常に許可
+- **Block モード** — デフォルト拒否（default-deny）。宛先 IP が allowlist に無い全アウトバウンド IPv4/IPv6 接続を拒否（プロセスへ `EPERM` を返す）。ループバックは常に許可。DNS（port 53）はシステム設定済みリゾルバのみ許可（`allow_all_dns: true` でオプトアウト可）
 
 ## 特徴
 
@@ -32,6 +32,8 @@ verdict=DENY(no-domain)      pid=1236   tgid=1236   comm=curl             dst=93
 | `ALLOW` | ポリシーで許可された接続 |
 | `DENY(not-in-policy)` | ドメインが allowlist に含まれない |
 | `DENY(no-domain)` | ドメイン不明（IP 直指定、または DNS 応答未観測） |
+| `SKIP(dns)` | ポリシー評価対象外の DNS 通信（信頼リゾルバまたはループバック宛。`allow_all_dns` 設定時やポリシー無しの場合は全 port-53 宛先） |
+| `SKIP(loopback)` | ループバック宛先（`127.0.0.0/8`, `::1`）。enforcement 対象外 |
 
 ## ポリシーファイル
 
