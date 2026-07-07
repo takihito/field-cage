@@ -28,6 +28,11 @@ type Watcher struct {
 	blockObjs   *BlockObjects
 	cgroupLink  link.Link // cgroup/connect4
 	cgroupLink6 link.Link // cgroup/connect6
+
+	// malformed counts ring buffer records dropped by Read because they failed
+	// to parse. Only touched from Read, which is called from a single
+	// goroutine, so no synchronization is needed.
+	malformed uint64
 }
 
 // NewWatcher loads the eBPF program and attaches it to the tracepoint.
@@ -354,7 +359,14 @@ func (w *Watcher) Read() (*Event, error) {
 		}
 		ev, err := parseEvent(record.RawSample)
 		if err != nil {
-			slog.Warn("skipping malformed connection event", "error", err)
+			// Rate-limit the warning: a struct-layout mismatch would make every
+			// event malformed, and an unthrottled warn per record floods the log.
+			// The first occurrence logs immediately so a mismatch is noticed;
+			// after that every 1000th keeps the ongoing failure visible.
+			w.malformed++
+			if w.malformed == 1 || w.malformed%1000 == 0 {
+				slog.Warn("skipping malformed connection event", "error", err, "total_skipped", w.malformed)
+			}
 			continue
 		}
 		ev.Domain = w.dnsCache.Lookup(ev.DAddr)
