@@ -9,7 +9,7 @@ A lightweight eBPF agent that monitors and restricts outbound network connection
 field-cage hooks into the Linux kernel via eBPF to observe every outbound connection attempt in real time. It maps raw IP addresses to domain names through DNS packet monitoring, then evaluates each connection against a YAML allowlist.
 
 - **Audit mode** — logs all connections without blocking. Safe to add to any existing workflow
-- **Block mode** — default-deny: every outbound IPv4/IPv6 connection whose destination is not on the allowlist is rejected (`EPERM` returned to the process). DNS (port 53) and loopback are always permitted
+- **Block mode** — default-deny: every outbound IPv4/IPv6 connection whose destination is not on the allowlist is rejected (`EPERM` returned to the process). Loopback is always permitted; DNS (port 53) is permitted only to the system's configured resolvers (opt out with `allow_all_dns: true`)
 
 ## Features
 
@@ -31,6 +31,8 @@ verdict=DENY(no-domain)      pid=1236   tgid=1236   comm=curl             dst=93
 | `ALLOW` | connection permitted by policy |
 | `DENY(not-in-policy)` | domain resolved but not in the allowlist |
 | `DENY(no-domain)` | domain unknown (IP direct, or DNS response not yet observed) |
+| `SKIP(dns)` | DNS traffic exempt from policy evaluation (trusted resolver or loopback; any port-53 destination when `allow_all_dns` is set or no policy is loaded) |
+| `SKIP(loopback)` | loopback destination (`127.0.0.0/8`, `::1`), excluded from enforcement |
 
 ## Policy file
 
