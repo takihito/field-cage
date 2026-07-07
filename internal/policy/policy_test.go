@@ -73,7 +73,7 @@ allowlist:
 	if !e.Allow("codeload.github.com", net.ParseIP("185.199.108.1")) {
 		t.Error("expected codeload.github.com to be allowed")
 	}
-	// wildcard-style entries are treated as literal domain names and won't match
+	// unlisted subdomains do not match (exact matching, no wildcards)
 	if e.Allow("api.github.com", net.ParseIP("140.82.121.5")) {
 		t.Error("expected api.github.com to be denied (not in allowlist)")
 	}
@@ -346,6 +346,84 @@ func TestInvalidMode(t *testing.T) {
 	_, err := newEngine(Config{Mode: "invalid"})
 	if err == nil {
 		t.Error("expected error for invalid mode")
+	}
+}
+
+func TestModeUnspecified(t *testing.T) {
+	// A policy file may omit mode entirely; the effective mode is resolved by
+	// the caller (--mode flag, or audit default). Loading must not fail.
+	e, err := newEngine(Config{Allowlist: []string{"github.com"}})
+	if err != nil {
+		t.Fatalf("unexpected error for unspecified mode: %v", err)
+	}
+	if e.Mode() != "" {
+		t.Errorf("Mode() = %q, want empty (unspecified)", e.Mode())
+	}
+}
+
+func TestWildcardEntryRejected(t *testing.T) {
+	// Matching is exact, so a wildcard entry would silently never match —
+	// dangerous in block mode. Loading must fail fast instead.
+	for _, entry := range []string{"*.github.com", "api.*.com", "*"} {
+		_, err := newEngine(Config{Mode: ModeBlock, Allowlist: []string{entry}})
+		if err == nil {
+			t.Errorf("newEngine with wildcard entry %q: expected error, got nil", entry)
+		}
+	}
+}
+
+func TestUnknownKeyRejected(t *testing.T) {
+	// mode is optional, so a misspelled key would silently leave it unset and
+	// run audit where block was intended. Strict decoding must fail instead.
+	cases := []string{
+		"mdoe: block\nallowlist:\n  - github.com\n",  // misspelled mode
+		"mode: block\nallowlists:\n  - github.com\n", // misspelled allowlist
+	}
+	for _, yaml := range cases {
+		f := filepath.Join(t.TempDir(), "policy.yml")
+		if err := os.WriteFile(f, []byte(yaml), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := LoadFile(f); err == nil {
+			t.Errorf("LoadFile with unknown key: expected error, got nil\npolicy:\n%s", yaml)
+		}
+	}
+}
+
+func TestEmptyPolicyFile(t *testing.T) {
+	// An empty file is a valid (empty) policy: mode unspecified, no allowlist.
+	f := filepath.Join(t.TempDir(), "policy.yml")
+	if err := os.WriteFile(f, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	e, err := LoadFile(f)
+	if err != nil {
+		t.Fatalf("LoadFile with empty file: unexpected error: %v", err)
+	}
+	if e.Mode() != "" {
+		t.Errorf("Mode() = %q, want empty (unspecified)", e.Mode())
+	}
+}
+
+func TestIPsReturnsDefensiveCopies(t *testing.T) {
+	// net.IP is a mutable byte slice; mutating a returned value must not
+	// corrupt the engine's stored IPs.
+	e, err := newEngine(Config{Mode: ModeBlock, Allowlist: []string{"1.2.3.4"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ips := e.IPs()
+	if len(ips) != 1 {
+		t.Fatalf("IPs() len = %d, want 1", len(ips))
+	}
+	for i := range ips[0] {
+		ips[0][i] = 0xff // clobber the returned copy
+	}
+	if !e.Allow("", net.ParseIP("1.2.3.4")) {
+		t.Error("Allow(1.2.3.4) = false after mutating IPs() result — engine state was corrupted")
+	}
+	if got := e.IPs()[0].String(); got != "1.2.3.4" {
+		t.Errorf("IPs()[0] = %q after mutating a previous result, want 1.2.3.4", got)
 	}
 }
 

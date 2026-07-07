@@ -8,11 +8,15 @@ import (
 	"github.com/takihito/field-cage/internal/policy"
 )
 
-// loadEngine writes a minimal policy file and loads it.
+// loadEngine writes a minimal policy file and loads it. An empty mode omits
+// the mode line entirely (unspecified).
 func loadEngine(t *testing.T, mode string) *policy.Engine {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "policy.yml")
-	data := "mode: " + mode + "\nallowlist:\n  - example.com\n"
+	data := "allowlist:\n  - example.com\n"
+	if mode != "" {
+		data = "mode: " + mode + "\n" + data
+	}
 	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -26,6 +30,7 @@ func loadEngine(t *testing.T, mode string) *policy.Engine {
 func TestResolveMode(t *testing.T) {
 	audit := loadEngine(t, "audit")
 	block := loadEngine(t, "block")
+	unspecified := loadEngine(t, "")
 
 	cases := []struct {
 		name     string
@@ -40,6 +45,8 @@ func TestResolveMode(t *testing.T) {
 		{"flag escalates to block", "block", audit, policy.ModeBlock, false},
 		{"invalid flag mode", "enforce", audit, "", true},
 		{"block without policy is refused", "block", nil, "", true},
+		{"policy without mode defaults to audit", "", unspecified, policy.ModeAudit, false},
+		{"flag sets block on policy without mode", "block", unspecified, policy.ModeBlock, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
