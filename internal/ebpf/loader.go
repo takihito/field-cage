@@ -5,7 +5,7 @@ package ebpf
 import (
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 
 	ciliumebpf "github.com/cilium/ebpf"
@@ -28,6 +28,11 @@ type Watcher struct {
 	blockObjs   *BlockObjects
 	cgroupLink  link.Link // cgroup/connect4
 	cgroupLink6 link.Link // cgroup/connect6
+
+	// malformed counts ring buffer records dropped by Read because they failed
+	// to parse. Only touched from Read, which is called from a single
+	// goroutine, so no synchronization is needed.
+	malformed uint64
 }
 
 // NewWatcher loads the eBPF program and attaches it to the tracepoint.
@@ -137,7 +142,7 @@ func newWatcher(cgroupPath string, isAllowedDomain func(string) bool) (w *Watche
 		}
 		// In audit mode DNS capture is best-effort: connections are still logged
 		// with their IP addresses and the agent continues running.
-		log.Printf("field-cage: DNS capture unavailable (audit mode, connections will show IPs only): %v", err)
+		slog.Warn("DNS capture unavailable; connections will show IPs only (audit mode)", "error", err)
 		dw = nil
 	}
 	w.dnsWatcher = dw
@@ -319,8 +324,7 @@ func (w *Watcher) SetAllowAllDNS(enabled bool) error {
 func (w *Watcher) seedResolvers() {
 	resolvers, err := SystemResolvers()
 	if err != nil {
-		log.Printf("field-cage: discover DNS resolvers failed; "+
-			"only loopback DNS will be permitted under block mode: %v", err)
+		slog.Warn("discover DNS resolvers failed; only loopback DNS will be permitted under block mode", "error", err)
 		return
 	}
 	seeded := 0
@@ -329,30 +333,45 @@ func (w *Watcher) seedResolvers() {
 			continue // loopback is always permitted by the program
 		}
 		if err := w.AllowResolver(ip); err != nil {
-			log.Printf("field-cage: seed DNS resolver %s: %v", ip, err)
+			slog.Warn("seed DNS resolver failed", "resolver", ip.String(), "error", err)
 			continue
 		}
 		seeded++
 	}
 	if seeded == 0 {
-		log.Printf("field-cage: no non-loopback nameservers discovered; " +
+		slog.Warn("no non-loopback nameservers discovered; " +
 			"only loopback DNS is permitted under block mode (set allow_all_dns: true to relax)")
 	}
 }
 
 // Read blocks until a connection event is available and returns it.
 // Returns an error when the watcher is closed.
+//
+// A malformed record is logged and skipped rather than returned as an error:
+// callers treat a Read error as fatal and tear down the watcher, which in
+// block mode detaches the cgroup enforcement programs — a single bad
+// monitoring event must not turn enforcement off (fail-open).
 func (w *Watcher) Read() (*Event, error) {
-	record, err := w.reader.Read()
-	if err != nil {
-		return nil, err
+	for {
+		record, err := w.reader.Read()
+		if err != nil {
+			return nil, err
+		}
+		ev, err := parseEvent(record.RawSample)
+		if err != nil {
+			// Rate-limit the warning: a struct-layout mismatch would make every
+			// event malformed, and an unthrottled warn per record floods the log.
+			// The first occurrence logs immediately so a mismatch is noticed;
+			// after that every 1000th keeps the ongoing failure visible.
+			w.malformed++
+			if w.malformed == 1 || w.malformed%1000 == 0 {
+				slog.Warn("skipping malformed connection event", "error", err, "total_skipped", w.malformed)
+			}
+			continue
+		}
+		ev.Domain = w.dnsCache.Lookup(ev.DAddr)
+		return ev, nil
 	}
-	ev, err := parseEvent(record.RawSample)
-	if err != nil {
-		return nil, err
-	}
-	ev.Domain = w.dnsCache.Lookup(ev.DAddr)
-	return ev, nil
 }
 
 // Close releases all eBPF resources and returns the first error encountered.
