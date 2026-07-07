@@ -372,6 +372,61 @@ func TestWildcardEntryRejected(t *testing.T) {
 	}
 }
 
+func TestUnknownKeyRejected(t *testing.T) {
+	// mode is optional, so a misspelled key would silently leave it unset and
+	// run audit where block was intended. Strict decoding must fail instead.
+	cases := []string{
+		"mdoe: block\nallowlist:\n  - github.com\n",  // misspelled mode
+		"mode: block\nallowlists:\n  - github.com\n", // misspelled allowlist
+	}
+	for _, yaml := range cases {
+		f := filepath.Join(t.TempDir(), "policy.yml")
+		if err := os.WriteFile(f, []byte(yaml), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := LoadFile(f); err == nil {
+			t.Errorf("LoadFile with unknown key: expected error, got nil\npolicy:\n%s", yaml)
+		}
+	}
+}
+
+func TestEmptyPolicyFile(t *testing.T) {
+	// An empty file is a valid (empty) policy: mode unspecified, no allowlist.
+	f := filepath.Join(t.TempDir(), "policy.yml")
+	if err := os.WriteFile(f, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	e, err := LoadFile(f)
+	if err != nil {
+		t.Fatalf("LoadFile with empty file: unexpected error: %v", err)
+	}
+	if e.Mode() != "" {
+		t.Errorf("Mode() = %q, want empty (unspecified)", e.Mode())
+	}
+}
+
+func TestIPsReturnsDefensiveCopies(t *testing.T) {
+	// net.IP is a mutable byte slice; mutating a returned value must not
+	// corrupt the engine's stored IPs.
+	e, err := newEngine(Config{Mode: ModeBlock, Allowlist: []string{"1.2.3.4"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ips := e.IPs()
+	if len(ips) != 1 {
+		t.Fatalf("IPs() len = %d, want 1", len(ips))
+	}
+	for i := range ips[0] {
+		ips[0][i] = 0xff // clobber the returned copy
+	}
+	if !e.Allow("", net.ParseIP("1.2.3.4")) {
+		t.Error("Allow(1.2.3.4) = false after mutating IPs() result — engine state was corrupted")
+	}
+	if got := e.IPs()[0].String(); got != "1.2.3.4" {
+		t.Errorf("IPs()[0] = %q after mutating a previous result, want 1.2.3.4", got)
+	}
+}
+
 func TestDomainsAndIPs(t *testing.T) {
 	cfg := Config{
 		Mode:      ModeBlock,

@@ -1,7 +1,10 @@
 package policy
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"strings"
@@ -48,7 +51,12 @@ func LoadFile(path string) (*Engine, error) {
 		return nil, fmt.Errorf("read policy file: %w", err)
 	}
 	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	// Strict decoding: an unknown key must fail loading. mode is optional, so
+	// a misspelled key (e.g. "mdoe: block") would otherwise leave it unset and
+	// silently run audit where block was intended — disabling enforcement.
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	if err := dec.Decode(&cfg); err != nil && !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("parse policy file: %w", err)
 	}
 	return newEngine(cfg)
@@ -130,7 +138,9 @@ func (e *Engine) Domains() []string {
 func (e *Engine) IPs() []net.IP {
 	ips := make([]net.IP, 0, len(e.allowedIP))
 	for _, ip := range e.allowedIP {
-		ips = append(ips, ip)
+		// Defensive copy: net.IP is a mutable byte slice, and handing out the
+		// stored ones would let a caller corrupt the engine's state.
+		ips = append(ips, append(net.IP(nil), ip...))
 	}
 	return ips
 }

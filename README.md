@@ -53,6 +53,8 @@ allowlist:
 
 > **Note**: Wildcards (`*.github.com`) are not supported — an entry containing `*` is rejected when the policy is loaded. List each subdomain explicitly.
 >
+> **Strict keys**: Unknown keys are rejected when the policy is loaded, so a misspelled key (e.g. `mdoe:`) fails fast instead of silently falling back to defaults.
+>
 > **CIDR**: A CIDR entry seeds the eBPF LPM trie directly, so all addresses in the subnet are permitted without per-IP DNS resolution.
 >
 > **DNS handling**: By default, port 53 is permitted only to the resolvers configured in `/etc/resolv.conf` plus loopback — this prevents a port-53 listener on an arbitrary host from being used as a general outbound tunnel. Set `allow_all_dns: true` to permit port 53 to any destination (the pre-0.x behavior). Even under the default, DNS *tunneling* through a legitimate resolver (data encoded in subdomains, resolved recursively) is not blocked; see Limitations.
