@@ -90,11 +90,16 @@ static __always_inline int dns_allow_all(void)
 	return v && *v;
 }
 
-SEC("cgroup/connect4")
-int block_connect(struct bpf_sock_addr *ctx)
+// check_ipv4 applies the IPv4 default-deny policy to a destination address
+// (network byte order) and port. dport is the 16-bit destination port in
+// network byte order; callers pass ctx->user_port, whose low 16 bits hold the
+// port, and the __u16 parameter truncates it so the port comparison never
+// depends on the high bits being zero. Returns 1 to allow, 0 to deny. Shared by
+// cgroup/connect4 and the IPv4-mapped IPv6 path in cgroup/connect6 so the two
+// cannot drift: a change to the IPv4 policy (loopback, DNS resolver, or
+// allowlist handling) is applied to both socket families at once.
+static __always_inline int check_ipv4(__u32 daddr, __u16 dport)
 {
-	__u32 daddr = ctx->user_ip4; // network byte order
-
 	// Always allow loopback (127.0.0.0/8): the high-order octet is 127.
 	// This also covers loopback DNS resolvers (e.g. systemd-resolved).
 	if ((bpf_ntohl(daddr) >> 24) == 127)
@@ -103,7 +108,7 @@ int block_connect(struct bpf_sock_addr *ctx)
 	// DNS (port 53): permit only to trusted resolvers unless allow_all_dns is
 	// set. Any other port-53 destination still gets a chance below in case it
 	// is an explicitly allowlisted IP; otherwise it is denied (fail-closed).
-	if (ctx->user_port == bpf_htons(53)) {
+	if (dport == bpf_htons(53)) {
 		if (dns_allow_all())
 			return 1; // opt-in: allow any DNS destination
 		if (bpf_map_lookup_elem(&dns_resolvers, &daddr))
@@ -117,13 +122,18 @@ int block_connect(struct bpf_sock_addr *ctx)
 	key.prefixlen = 32;
 	__builtin_memcpy(key.addr, &daddr, 4);
 
-	__u8 *allowed = bpf_map_lookup_elem(&allowed_ips, &key);
-	if (allowed)
+	if (bpf_map_lookup_elem(&allowed_ips, &key))
 		return 1; // allow: destination matches an allowlisted prefix
 
-	// Default deny: cgroup/connect4 returning 0 causes the kernel to fail the
-	// connect() syscall with EPERM.
+	// Default deny: returning 0 causes the kernel to fail the connect() syscall
+	// with EPERM.
 	return 0;
+}
+
+SEC("cgroup/connect4")
+int block_connect(struct bpf_sock_addr *ctx)
+{
+	return check_ipv4(ctx->user_ip4, ctx->user_port);
 }
 
 SEC("cgroup/connect6")
@@ -142,29 +152,11 @@ int block_connect6(struct bpf_sock_addr *ctx)
 
 	// IPv4-mapped IPv6 (::ffff:a.b.c.d): dual-stack sockets (common in Node.js
 	// and Java) reach IPv4 destinations through connect6. Apply the same policy
-	// as connect4 by consulting the IPv4 maps, so an IPv4 allowlist / resolver
-	// entry works regardless of which socket family the application used.
-	if (a0 == 0 && a1 == 0 && a2 == bpf_htonl(0x0000ffff)) {
-		__u32 daddr4 = a3; // network byte order
-
-		// Loopback 127.0.0.0/8 via its IPv4-mapped form.
-		if ((bpf_ntohl(daddr4) >> 24) == 127)
-			return 1; // allow
-
-		if (ctx->user_port == bpf_htons(53)) {
-			if (dns_allow_all())
-				return 1;
-			if (bpf_map_lookup_elem(&dns_resolvers, &daddr4))
-				return 1; // trusted resolver
-		}
-
-		struct lpm_key key4 = {};
-		key4.prefixlen = 32;
-		__builtin_memcpy(key4.addr, &daddr4, 4);
-		if (bpf_map_lookup_elem(&allowed_ips, &key4))
-			return 1; // allow
-		return 0; // deny
-	}
+	// as connect4 by consulting the IPv4 maps (via check_ipv4), so an IPv4
+	// allowlist / resolver entry works regardless of which socket family the
+	// application used.
+	if (a0 == 0 && a1 == 0 && a2 == bpf_htonl(0x0000ffff))
+		return check_ipv4(a3, ctx->user_port);
 
 	// Native IPv6 DNS (port 53): permit to trusted resolvers (or any
 	// destination when allow_all_dns is set). A non-resolver port-53
