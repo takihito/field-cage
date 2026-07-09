@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -86,9 +87,25 @@ func run(configPath, flagMode string) error {
 		return err
 	}
 
+	// Discover the system nameservers once and share them across the three
+	// consumers — port-53 enforcement seeding, live-allowlist source
+	// validation, and verdict reporting — so all agree on the same set.
+	// Previously each rediscovered them independently and could disagree if
+	// resolv.conf changed mid-startup. Only needed when a policy is loaded;
+	// with no policy, DNS is unrestricted everywhere.
+	var resolvers []net.IP
+	if engine != nil {
+		resolvers, err = ebpf.SystemResolvers()
+		if err != nil {
+			slog.Warn("discover DNS resolvers failed; block mode permits only "+
+				"loopback DNS and verdict reporting falls back to allowlist "+
+				"policy for non-loopback DNS", "error", err)
+		}
+	}
+
 	var watcher *ebpf.Watcher
 	if mode == policy.ModeBlock {
-		watcher, err = ebpf.NewBlockWatcher("/sys/fs/cgroup", engine.IsAllowedDomain)
+		watcher, err = ebpf.NewBlockWatcher("/sys/fs/cgroup", engine.IsAllowedDomain, resolvers)
 	} else {
 		watcher, err = ebpf.NewWatcher()
 	}
@@ -140,7 +157,7 @@ func run(configPath, flagMode string) error {
 	if engine != nil {
 		allower = engine
 	}
-	dnsExempt := dnsExemptFor(engine)
+	dnsExempt := dnsExemptFor(engine, resolvers)
 
 	readErr := make(chan error, 1)
 	go func() {
@@ -178,17 +195,12 @@ func run(configPath, flagMode string) error {
 // exempt; otherwise only loopback and the discovered system resolvers are.
 // Non-exempt port-53 connections are evaluated against the allowlist, so a
 // denied DNS connection is reported as DENY rather than hidden as SKIP(dns).
-func dnsExemptFor(engine *policy.Engine) report.DNSExempt {
+func dnsExemptFor(engine *policy.Engine, resolvers []net.IP) report.DNSExempt {
 	if engine == nil {
 		return nil // no policy: port 53 is unrestricted, mirror as exempt
 	}
 	if engine.AllowAllDNS() {
 		return func(net.IP) bool { return true }
-	}
-	resolvers, err := ebpf.SystemResolvers()
-	if err != nil {
-		slog.Warn("discover DNS resolvers for verdict reporting failed; "+
-			"non-loopback DNS will be reported by allowlist policy", "error", err)
 	}
 	set := make(map[string]struct{}, len(resolvers))
 	for _, ip := range resolvers {
@@ -230,21 +242,49 @@ func seedAllowlist(w *ebpf.Watcher, engine *policy.Engine) {
 			slog.Warn("seed allowed CIDR failed", "cidr", cidr.String(), "error", err)
 		}
 	}
+	// Resolve the allowlisted domains concurrently: each lookup can take up to
+	// seedLookupTimeout, so a serial loop delayed startup by domains×timeout in
+	// the worst case. A bounded worker pool caps in-flight lookups so a large
+	// allowlist cannot spawn an unbounded number of goroutines/sockets. Results
+	// are collected per domain and the enforcement map is written afterwards
+	// from this single goroutine, so no concurrent map access is involved.
+	domains := engine.Domains()
+	type seedResult struct {
+		domain string
+		ips    []net.IP
+		err    error
+	}
+	results := make([]seedResult, len(domains))
+	const maxConcurrentLookups = 8
+	sem := make(chan struct{}, maxConcurrentLookups)
+	var wg sync.WaitGroup
 	var resolver net.Resolver
-	for _, domain := range engine.Domains() {
-		// "ip" resolves both A and AAAA records so IPv4 and IPv6 destinations
-		// are seeded. Each lookup is bounded by seedLookupTimeout so a slow or
-		// unreachable resolver cannot block startup indefinitely.
-		ctx, cancel := context.WithTimeout(context.Background(), seedLookupTimeout)
-		ips, err := resolver.LookupIP(ctx, "ip", domain)
-		cancel()
-		if err != nil {
-			slog.Warn("seed: resolve failed (will rely on observed DNS)", "domain", domain, "error", err)
+	for i, domain := range domains {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(i int, domain string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			// "ip" resolves both A and AAAA records so IPv4 and IPv6
+			// destinations are seeded. Each lookup is bounded by
+			// seedLookupTimeout so a slow or unreachable resolver cannot block
+			// startup indefinitely.
+			ctx, cancel := context.WithTimeout(context.Background(), seedLookupTimeout)
+			defer cancel()
+			ips, err := resolver.LookupIP(ctx, "ip", domain)
+			results[i] = seedResult{domain: domain, ips: ips, err: err}
+		}(i, domain)
+	}
+	wg.Wait()
+
+	for _, r := range results {
+		if r.err != nil {
+			slog.Warn("seed: resolve failed (will rely on observed DNS)", "domain", r.domain, "error", r.err)
 			continue
 		}
-		for _, ip := range ips {
+		for _, ip := range r.ips {
 			if err := w.AllowIP(ip); err != nil {
-				slog.Warn("seed allowed IP failed", "ip", ip.String(), "domain", domain, "error", err)
+				slog.Warn("seed allowed IP failed", "ip", ip.String(), "domain", r.domain, "error", err)
 			}
 		}
 	}

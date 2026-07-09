@@ -31,7 +31,7 @@ type dnsWatcher struct {
 	trustedResolvers map[string]struct{}
 }
 
-func newDNSWatcher(cache *DNSCache, isAllowed func(string) bool, allow func(net.IP) error) (*dnsWatcher, error) {
+func newDNSWatcher(cache *DNSCache, isAllowed func(string) bool, allow func(net.IP) error, resolvers []net.IP) (*dnsWatcher, error) {
 	var objs DnsObjects
 	if err := LoadDnsObjects(&objs, nil); err != nil {
 		return nil, fmt.Errorf("load DNS eBPF objects: %w", err)
@@ -64,12 +64,9 @@ func newDNSWatcher(cache *DNSCache, isAllowed func(string) bool, allow func(net.
 	// Block mode only: determine which resolver source IPs are trusted for
 	// allowlisting. Responses from any other source (e.g. forged packets with a
 	// spoofed source port 53) are still cached for logging but never extend the
-	// kernel allowlist.
+	// kernel allowlist. The nameserver set is discovered once by the caller and
+	// passed in; when it is empty, only loopback responses are trusted.
 	if allow != nil {
-		resolvers, err := SystemResolvers()
-		if err != nil {
-			slog.Warn("discover DNS resolvers failed; live DNS allowlisting limited to loopback responses", "error", err)
-		}
 		w.trustedResolvers = make(map[string]struct{})
 		for _, ip := range resolvers {
 			// Includes the upstreams behind a systemd-resolved stub: their

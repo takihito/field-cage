@@ -38,7 +38,7 @@ type Watcher struct {
 // NewWatcher loads the eBPF program and attaches it to the tracepoint.
 // The caller must call Close when done.
 func NewWatcher() (*Watcher, error) {
-	return newWatcher("", nil)
+	return newWatcher("", nil, nil)
 }
 
 // NewBlockWatcher is like NewWatcher but also loads the cgroup/connect4 and
@@ -49,11 +49,14 @@ func NewWatcher() (*Watcher, error) {
 // cgroupPath is the path to a writable cgroup v2 directory
 // (e.g. "/sys/fs/cgroup"). isAllowedDomain reports whether a resolved domain is
 // on the allowlist; it may be nil, in which case only seeded IPs are permitted.
-func NewBlockWatcher(cgroupPath string, isAllowedDomain func(string) bool) (*Watcher, error) {
-	return newWatcher(cgroupPath, isAllowedDomain)
+// resolvers are the system nameservers (from SystemResolvers), discovered once
+// by the caller and shared across port-53 seeding and DNS-response source
+// validation; it may be nil, in which case only loopback DNS is trusted.
+func NewBlockWatcher(cgroupPath string, isAllowedDomain func(string) bool, resolvers []net.IP) (*Watcher, error) {
+	return newWatcher(cgroupPath, isAllowedDomain, resolvers)
 }
 
-func newWatcher(cgroupPath string, isAllowedDomain func(string) bool) (w *Watcher, err error) {
+func newWatcher(cgroupPath string, isAllowedDomain func(string) bool, resolvers []net.IP) (w *Watcher, err error) {
 	withBlock := cgroupPath != ""
 
 	// Cleanup stack: every successfully acquired resource pushes its release
@@ -115,7 +118,7 @@ func newWatcher(cgroupPath string, isAllowedDomain func(string) bool) (w *Watche
 		// Seed trusted resolver IPs so DNS (port 53) is permitted to them under
 		// default-deny. Loopback resolvers are already covered by the loopback
 		// rule; if no resolvers are found only loopback DNS works (fail-closed).
-		w.seedResolvers()
+		w.seedResolvers(resolvers)
 	}
 
 	// In block mode, observed DNS responses for allowlisted domains are added to
@@ -124,7 +127,7 @@ func newWatcher(cgroupPath string, isAllowedDomain func(string) bool) (w *Watche
 	if withBlock {
 		onAllowedIP = w.AllowIP
 	}
-	dw, err := newDNSWatcher(cache, isAllowedDomain, onAllowedIP)
+	dw, err := newDNSWatcher(cache, isAllowedDomain, onAllowedIP, resolvers)
 	if err != nil {
 		if withBlock {
 			// In block mode the allowlist is keyed on domain names resolved from
@@ -317,16 +320,12 @@ func (w *Watcher) SetAllowAllDNS(enabled bool) error {
 // nameserver, including the upstream servers behind a systemd-resolved
 // loopback stub (see SystemResolvers) — the stub daemon's own outbound
 // queries fall under root-cgroup enforcement, so its upstreams must be
-// permitted or resolution through the stub would fail. On discovery failure
-// or when no nameservers are found, only loopback DNS is permitted
+// permitted or resolution through the stub would fail. The nameserver set is
+// discovered once by the caller and passed in. When it is empty (discovery
+// failed or found no nameservers), only loopback DNS is permitted
 // (fail-closed); this is logged so a broken name-resolution setup can be
 // diagnosed.
-func (w *Watcher) seedResolvers() {
-	resolvers, err := SystemResolvers()
-	if err != nil {
-		slog.Warn("discover DNS resolvers failed; only loopback DNS will be permitted under block mode", "error", err)
-		return
-	}
+func (w *Watcher) seedResolvers(resolvers []net.IP) {
 	seeded := 0
 	for _, ip := range resolvers {
 		if ip.IsLoopback() {

@@ -122,7 +122,7 @@ func TestWatcherCapturesIPv4Connect(t *testing.T) {
 func TestBlockWatcherDefaultDeny(t *testing.T) {
 	cgroupPath := setupTestCgroup(t)
 	denyAll := func(string) bool { return false }
-	w, err := ebpf.NewBlockWatcher(cgroupPath, denyAll)
+	w, err := ebpf.NewBlockWatcher(cgroupPath, denyAll, nil)
 	if err != nil {
 		if errors.Is(err, os.ErrPermission) {
 			t.Skipf("skipping: insufficient privileges (needs CAP_BPF/CAP_NET_RAW/root): %v", err)
@@ -175,7 +175,7 @@ func TestBlockWatcherDefaultDeny(t *testing.T) {
 func TestBlockWatcherAllowCIDR(t *testing.T) {
 	cgroupPath := setupTestCgroup(t)
 	denyAll := func(string) bool { return false }
-	w, err := ebpf.NewBlockWatcher(cgroupPath, denyAll)
+	w, err := ebpf.NewBlockWatcher(cgroupPath, denyAll, nil)
 	if err != nil {
 		if errors.Is(err, os.ErrPermission) {
 			t.Skipf("skipping: insufficient privileges (needs CAP_BPF/CAP_NET_RAW/root): %v", err)
@@ -217,7 +217,7 @@ func TestBlockWatcherAllowCIDR(t *testing.T) {
 func TestBlockWatcherDefaultDenyIPv6(t *testing.T) {
 	cgroupPath := setupTestCgroup(t)
 	denyAll := func(string) bool { return false }
-	w, err := ebpf.NewBlockWatcher(cgroupPath, denyAll)
+	w, err := ebpf.NewBlockWatcher(cgroupPath, denyAll, nil)
 	if err != nil {
 		if errors.Is(err, os.ErrPermission) {
 			t.Skipf("skipping: insufficient privileges (needs CAP_BPF/CAP_NET_RAW/root): %v", err)
@@ -286,7 +286,7 @@ func TestBlockWatcherDefaultDenyIPv6(t *testing.T) {
 func TestBlockWatcherIPv4MappedConnect6(t *testing.T) {
 	cgroupPath := setupTestCgroup(t)
 	denyAll := func(string) bool { return false }
-	w, err := ebpf.NewBlockWatcher(cgroupPath, denyAll)
+	w, err := ebpf.NewBlockWatcher(cgroupPath, denyAll, nil)
 	if err != nil {
 		if errors.Is(err, os.ErrPermission) {
 			t.Skipf("skipping: insufficient privileges (needs CAP_BPF/CAP_NET_RAW/root): %v", err)
@@ -334,7 +334,7 @@ func TestBlockWatcherIPv4MappedConnect6(t *testing.T) {
 func TestBlockWatcherDNSResolverRestriction(t *testing.T) {
 	cgroupPath := setupTestCgroup(t)
 	denyAll := func(string) bool { return false }
-	w, err := ebpf.NewBlockWatcher(cgroupPath, denyAll)
+	w, err := ebpf.NewBlockWatcher(cgroupPath, denyAll, nil)
 	if err != nil {
 		if errors.Is(err, os.ErrPermission) {
 			t.Skipf("skipping: insufficient privileges (needs CAP_BPF/CAP_NET_RAW/root): %v", err)
@@ -368,7 +368,7 @@ func TestBlockWatcherDNSResolverRestriction(t *testing.T) {
 func TestBlockWatcherAllowAllDNS(t *testing.T) {
 	cgroupPath := setupTestCgroup(t)
 	denyAll := func(string) bool { return false }
-	w, err := ebpf.NewBlockWatcher(cgroupPath, denyAll)
+	w, err := ebpf.NewBlockWatcher(cgroupPath, denyAll, nil)
 	if err != nil {
 		if errors.Is(err, os.ErrPermission) {
 			t.Skipf("skipping: insufficient privileges (needs CAP_BPF/CAP_NET_RAW/root): %v", err)
