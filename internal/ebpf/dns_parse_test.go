@@ -134,29 +134,20 @@ func TestParseDNSResponse_TooShort(t *testing.T) {
 	}
 }
 
-func TestReadDNSName_WithPointer(t *testing.T) {
-	// Build a message where the answer NAME uses a compression pointer.
-	// Pointer 0xc00c points to offset 12 which holds "example.com".
+func TestParseDNSResponse_CompressionPointer(t *testing.T) {
+	// buildDNSResponse writes the answer NAME as the compression pointer
+	// 0xc00c (back to the question name at offset 12). A successful parse of
+	// the domain and A record therefore exercises name-compression handling.
 	domain := "example.com"
 	ip := net.IP{1, 2, 3, 4}
 	msg := buildDNSResponse(domain, ip)
 
-	// The answer NAME starts at offset 29:
-	//   12 (header)
-	// +  8 (0x07 "example")
-	// +  4 (0x03 "com")
-	// +  1 (0x00 root label)     = 13 bytes QNAME
-	// +  2 (QTYPE) + 2 (QCLASS) =  4 bytes → question = 17 bytes
-	// = 12 + 17 = 29
-	// At offset 29 lies 0xc0 0x0c — the compression pointer — which must be
-	// followed back to offset 12 to reconstruct "example.com".
-	const answerNameOffset = 29
-	got, _, ok := readDNSName(msg, answerNameOffset)
-	if !ok {
-		t.Fatal("readDNSName returned not ok")
+	gotDomain, ips := parseDNSResponse(msg)
+	if gotDomain != domain {
+		t.Errorf("domain = %q, want %q", gotDomain, domain)
 	}
-	if got != domain {
-		t.Errorf("got %q, want %q", got, domain)
+	if len(ips) != 1 || !ips[0].Equal(ip) {
+		t.Errorf("ips = %v, want [%v]", ips, ip)
 	}
 }
 

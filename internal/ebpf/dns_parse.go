@@ -5,6 +5,8 @@ import (
 	"net"
 	"os"
 	"strings"
+
+	"golang.org/x/net/dns/dnsmessage"
 )
 
 // htons converts a uint16 from host byte order to network byte order.
@@ -114,109 +116,66 @@ func isTrustedSourceIP(ip net.IP, trusted map[string]struct{}) bool {
 
 // parseDNSResponse parses a raw DNS response and returns the queried domain
 // name and the list of IP addresses from A and AAAA records in the answer
-// section. Returns empty values if the message is not a valid DNS response.
+// section. Returns empty values if the message is not a valid DNS response or
+// carries no question to attribute the answers to.
+//
+// Parsing is delegated to golang.org/x/net/dns/dnsmessage — the same wire
+// parser the standard library's net package uses internally — rather than a
+// hand-rolled one, because this input arrives on the wire and may be attacker
+// controlled (a forged response with a spoofed source port 53). The library
+// handles name compression, bounds checking, and malformed input robustly.
 func parseDNSResponse(data []byte) (domain string, ips []net.IP) {
-	if len(data) < 12 {
+	var p dnsmessage.Parser
+	hdr, err := p.Start(data)
+	if err != nil {
 		return "", nil
 	}
-
-	// Flags: bit 15 = QR (1 = response), bits 14-11 = opcode (0 = QUERY)
-	flags := binary.BigEndian.Uint16(data[2:4])
-	if flags&0x8000 == 0 {
-		return "", nil // not a response
+	if !hdr.Response {
+		return "", nil // a query, not a response
 	}
 
-	qdcount := int(binary.BigEndian.Uint16(data[4:6]))
-	ancount := int(binary.BigEndian.Uint16(data[6:8]))
-
-	offset := 12
-
-	// Parse question section to extract the queried domain name.
-	for i := 0; i < qdcount; i++ {
-		name, n, ok := readDNSName(data, offset)
-		if !ok {
-			return "", nil
-		}
-		if i == 0 {
-			domain = name
-		}
-		offset = n + 4 // skip QTYPE (2 bytes) + QCLASS (2 bytes)
+	// Extract the queried name from the first question, then skip the rest so
+	// the parser advances to the answer section. Without a question there is no
+	// domain to attribute the answers to; the caller drops empty-domain results.
+	q, err := p.Question()
+	if err != nil {
+		return "", nil
+	}
+	// Name.String() renders as a fully qualified name with a trailing dot
+	// (e.g. "example.com."); strip it to match the cache/policy key format.
+	domain = strings.TrimSuffix(q.Name.String(), ".")
+	if err := p.SkipAllQuestions(); err != nil {
+		return domain, nil
 	}
 
-	// Parse answer section and collect A and AAAA records.
-	for i := 0; i < ancount; i++ {
-		_, n, ok := readDNSName(data, offset)
-		if !ok {
-			break
+	for {
+		h, err := p.AnswerHeader()
+		if err != nil {
+			break // ErrSectionDone or malformed: stop collecting
 		}
-		offset = n
-		if offset+10 > len(data) {
-			break
-		}
-		rtype := binary.BigEndian.Uint16(data[offset : offset+2])
-		rdlen := int(binary.BigEndian.Uint16(data[offset+8 : offset+10]))
-		offset += 10
-		if offset+rdlen > len(data) {
-			break
-		}
-		switch {
-		case rtype == 1 && rdlen == 4: // A record
-			ip := make(net.IP, 4)
-			copy(ip, data[offset:offset+4])
+		switch h.Type {
+		case dnsmessage.TypeA:
+			r, err := p.AResource()
+			if err != nil {
+				return domain, ips
+			}
+			ip := make(net.IP, net.IPv4len)
+			copy(ip, r.A[:])
 			ips = append(ips, ip)
-		case rtype == 28 && rdlen == 16: // AAAA record
-			ip := make(net.IP, 16)
-			copy(ip, data[offset:offset+16])
+		case dnsmessage.TypeAAAA:
+			r, err := p.AAAAResource()
+			if err != nil {
+				return domain, ips
+			}
+			ip := make(net.IP, net.IPv6len)
+			copy(ip, r.AAAA[:])
 			ips = append(ips, ip)
+		default:
+			if err := p.SkipAnswer(); err != nil {
+				return domain, ips
+			}
 		}
-		offset += rdlen
 	}
 
 	return domain, ips
-}
-
-// readDNSName reads a DNS name (with compression pointer support) starting at
-// offset. Returns the name, the offset after the name in the original message,
-// and whether parsing succeeded.
-func readDNSName(data []byte, offset int) (string, int, bool) {
-	var labels []string
-	finalOffset := -1
-	visited := 0 // guard against pointer loops
-
-	for {
-		if offset >= len(data) || visited > 128 {
-			return "", 0, false
-		}
-		visited++
-
-		length := int(data[offset])
-		if length == 0 {
-			offset++
-			break
-		}
-
-		if length&0xC0 == 0xC0 { // compression pointer
-			if offset+1 >= len(data) {
-				return "", 0, false
-			}
-			if finalOffset == -1 {
-				finalOffset = offset + 2
-			}
-			ptr := int(binary.BigEndian.Uint16(data[offset:offset+2]) & 0x3FFF)
-			offset = ptr
-			continue
-		}
-
-		offset++
-		if offset+length > len(data) {
-			return "", 0, false
-		}
-		labels = append(labels, string(data[offset:offset+length]))
-		offset += length
-	}
-
-	if finalOffset != -1 {
-		offset = finalOffset
-	}
-	return strings.Join(labels, "."), offset, true
 }
