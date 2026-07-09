@@ -97,9 +97,13 @@ func run(configPath, flagMode string) error {
 	if engine != nil {
 		resolvers, err = ebpf.SystemResolvers()
 		if err != nil {
-			slog.Warn("discover DNS resolvers failed; block mode permits only "+
-				"loopback DNS and verdict reporting falls back to allowlist "+
-				"policy for non-loopback DNS", "error", err)
+			// This runs whenever a policy is loaded, so keep the message
+			// mode-agnostic: in block mode only loopback DNS ends up permitted,
+			// and in either mode verdict reporting falls back to allowlist
+			// policy for non-loopback DNS.
+			slog.Warn("discover DNS resolvers failed; only loopback DNS is "+
+				"trusted and verdict reporting falls back to allowlist policy "+
+				"for non-loopback DNS", "error", err)
 		}
 	}
 

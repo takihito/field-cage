@@ -321,10 +321,10 @@ func (w *Watcher) SetAllowAllDNS(enabled bool) error {
 // loopback stub (see SystemResolvers) — the stub daemon's own outbound
 // queries fall under root-cgroup enforcement, so its upstreams must be
 // permitted or resolution through the stub would fail. The nameserver set is
-// discovered once by the caller and passed in. When it is empty (discovery
-// failed or found no nameservers), only loopback DNS is permitted
-// (fail-closed); this is logged so a broken name-resolution setup can be
-// diagnosed.
+// discovered once by the caller and passed in. When it contains no non-loopback
+// nameserver (the set is empty, or holds only loopback stub entries), nothing
+// is seeded and only loopback DNS is permitted (fail-closed); this is logged so
+// a broken name-resolution setup can be diagnosed.
 func (w *Watcher) seedResolvers(resolvers []net.IP) {
 	seeded := 0
 	for _, ip := range resolvers {

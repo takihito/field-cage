@@ -91,12 +91,14 @@ static __always_inline int dns_allow_all(void)
 }
 
 // check_ipv4 applies the IPv4 default-deny policy to a destination address
-// (network byte order) and port (ctx->user_port, network byte order in its low
-// 16 bits). Returns 1 to allow, 0 to deny. Shared by cgroup/connect4 and the
-// IPv4-mapped IPv6 path in cgroup/connect6 so the two cannot drift: a change to
-// the IPv4 policy (loopback, DNS resolver, or allowlist handling) is applied to
-// both socket families at once.
-static __always_inline int check_ipv4(__u32 daddr, __u32 dport)
+// (network byte order) and port. dport is the 16-bit destination port in
+// network byte order; callers pass ctx->user_port, whose low 16 bits hold the
+// port, and the __u16 parameter truncates it so the port comparison never
+// depends on the high bits being zero. Returns 1 to allow, 0 to deny. Shared by
+// cgroup/connect4 and the IPv4-mapped IPv6 path in cgroup/connect6 so the two
+// cannot drift: a change to the IPv4 policy (loopback, DNS resolver, or
+// allowlist handling) is applied to both socket families at once.
+static __always_inline int check_ipv4(__u32 daddr, __u16 dport)
 {
 	// Always allow loopback (127.0.0.0/8): the high-order octet is 127.
 	// This also covers loopback DNS resolvers (e.g. systemd-resolved).
