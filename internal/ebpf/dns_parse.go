@@ -145,7 +145,7 @@ func parseDNSResponse(data []byte) (domain string, ips []net.IP) {
 	// (e.g. "example.com."); strip it to match the cache/policy key format.
 	domain = strings.TrimSuffix(q.Name.String(), ".")
 	if err := p.SkipAllQuestions(); err != nil {
-		return domain, nil
+		return "", nil // malformed question section: not a valid response
 	}
 
 	for {
@@ -153,8 +153,8 @@ func parseDNSResponse(data []byte) (domain string, ips []net.IP) {
 		if err != nil {
 			break // ErrSectionDone or malformed: stop collecting
 		}
-		switch h.Type {
-		case dnsmessage.TypeA:
+		switch {
+		case h.Type == dnsmessage.TypeA && h.Length == net.IPv4len:
 			r, err := p.AResource()
 			if err != nil {
 				return domain, ips
@@ -162,7 +162,7 @@ func parseDNSResponse(data []byte) (domain string, ips []net.IP) {
 			ip := make(net.IP, net.IPv4len)
 			copy(ip, r.A[:])
 			ips = append(ips, ip)
-		case dnsmessage.TypeAAAA:
+		case h.Type == dnsmessage.TypeAAAA && h.Length == net.IPv6len:
 			r, err := p.AAAAResource()
 			if err != nil {
 				return domain, ips
@@ -171,6 +171,10 @@ func parseDNSResponse(data []byte) (domain string, ips []net.IP) {
 			copy(ip, r.AAAA[:])
 			ips = append(ips, ip)
 		default:
+			// Also covers A/AAAA records with an RDLENGTH that doesn't match the
+			// fixed record size: AResource/AAAAResource read a fixed number of
+			// bytes regardless of the declared length, so skip rather than risk
+			// misreading adjacent record bytes as an address.
 			if err := p.SkipAnswer(); err != nil {
 				return domain, ips
 			}
