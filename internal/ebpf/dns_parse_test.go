@@ -134,29 +134,55 @@ func TestParseDNSResponse_TooShort(t *testing.T) {
 	}
 }
 
-func TestReadDNSName_WithPointer(t *testing.T) {
-	// Build a message where the answer NAME uses a compression pointer.
-	// Pointer 0xc00c points to offset 12 which holds "example.com".
+func TestParseDNSResponse_CompressionPointer(t *testing.T) {
+	// buildDNSResponse writes the answer NAME as the compression pointer
+	// 0xc00c (back to the question name at offset 12). A successful parse of
+	// the domain and A record therefore exercises name-compression handling.
 	domain := "example.com"
 	ip := net.IP{1, 2, 3, 4}
 	msg := buildDNSResponse(domain, ip)
 
-	// The answer NAME starts at offset 29:
-	//   12 (header)
-	// +  8 (0x07 "example")
-	// +  4 (0x03 "com")
-	// +  1 (0x00 root label)     = 13 bytes QNAME
-	// +  2 (QTYPE) + 2 (QCLASS) =  4 bytes → question = 17 bytes
-	// = 12 + 17 = 29
-	// At offset 29 lies 0xc0 0x0c — the compression pointer — which must be
-	// followed back to offset 12 to reconstruct "example.com".
-	const answerNameOffset = 29
-	got, _, ok := readDNSName(msg, answerNameOffset)
-	if !ok {
-		t.Fatal("readDNSName returned not ok")
+	gotDomain, ips := parseDNSResponse(msg)
+	if gotDomain != domain {
+		t.Errorf("domain = %q, want %q", gotDomain, domain)
 	}
-	if got != domain {
-		t.Errorf("got %q, want %q", got, domain)
+	if len(ips) != 1 || !ips[0].Equal(ip) {
+		t.Errorf("ips = %v, want [%v]", ips, ip)
+	}
+}
+
+func TestParseDNSResponse_MalformedRDLength(t *testing.T) {
+	// A record with RDLENGTH = 0 instead of 4, followed by trailing bytes that
+	// must not be misread as the IP (regression for a mismatched-length answer
+	// being parsed as an address anyway).
+	domain := "example.com"
+	msg := buildDNSResponse(domain, net.IP{1, 2, 3, 4})
+	rdlenOff := len(msg) - 6 // offset of the RDLENGTH field in the A answer
+	msg[rdlenOff] = 0x00
+	msg[rdlenOff+1] = 0x00 // RDLENGTH = 0
+	// Leave the 4 trailing "RDATA" bytes in place; the parser must not read them.
+
+	gotDomain, ips := parseDNSResponse(msg)
+	if gotDomain != domain {
+		t.Errorf("domain = %q, want %q", gotDomain, domain)
+	}
+	if len(ips) != 0 {
+		t.Errorf("ips = %v, want none for a mismatched RDLENGTH", ips)
+	}
+}
+
+func TestParseDNSResponse_MalformedQuestionSection(t *testing.T) {
+	// QDCOUNT claims 2 questions but the message ends after the first, so
+	// SkipAllQuestions fails after the domain was already extracted from the
+	// first question. The answer section must be dropped too: otherwise its
+	// bytes happen to parse as a valid second question.
+	msg := buildDNSResponse("example.com", net.IP{1, 2, 3, 4})
+	msg[5] = 0x02          // QDCOUNT = 2
+	msg = msg[:len(msg)-16] // truncate the 16-byte answer record
+
+	domain, ips := parseDNSResponse(msg)
+	if domain != "" || ips != nil {
+		t.Errorf("expected fully empty result for a malformed question section, got domain=%q ips=%v", domain, ips)
 	}
 }
 
