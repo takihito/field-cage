@@ -66,8 +66,12 @@ struct {
 	__uint(max_entries, 1 << 24); // 16 MB
 } events SEC(".maps");
 
+// LRU_HASH rather than HASH: an interrupted connect() (e.g. killed between
+// enter and exit tracepoints) leaves its entry behind forever, and a plain
+// HASH would eventually fill up and drop all new events. LRU auto-evicts the
+// stale entries under pressure.
 struct {
-	__uint(type, BPF_MAP_TYPE_HASH);
+	__uint(type, BPF_MAP_TYPE_LRU_HASH);
 	__uint(max_entries, 10240);
 	__type(key,   __u64);
 	__type(value, struct pending_connect);
@@ -127,9 +131,8 @@ int trace_connect_enter(struct connect_enter_args *ctx)
 	pc.family   = family;
 	bpf_get_current_comm(pc.comm, sizeof(pc.comm));
 
-	// If the map is full, the event will be silently dropped at sys_exit_connect.
-	// Using BPF_MAP_TYPE_LRU_HASH instead of BPF_MAP_TYPE_HASH would auto-evict
-	// stale entries and prevent this; for now just return cleanly on failure.
+	// LRU_HASH evicts the least-recently-used entry when full, so this update
+	// only fails on transient conditions; return cleanly and lose the one event.
 	if (bpf_map_update_elem(&pending_connects, &pid_tgid, &pc, BPF_ANY) < 0)
 		return 0;
 	return 0;

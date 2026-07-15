@@ -78,14 +78,18 @@ int capture_dns(struct __sk_buff *skb)
 	ev->saddr = 0;
 	bpf_skb_load_bytes(skb, ETH_HLEN + 12, &ev->saddr, 4);
 
+	/* Zero the whole payload before copying so that bytes past dns_len never
+	 * carry stale ring-buffer memory to userspace. A variable-length submit is
+	 * not an option here: bpf_ringbuf_reserve needs a constant size, and
+	 * bpf_ringbuf_output would need a ~520-byte stack buffer, exceeding the
+	 * 512-byte BPF stack limit. */
+	__builtin_memset(ev->payload, 0, DNS_MAX_LEN);
+
 	__u32 dns_offset = ETH_HLEN + ihl + 8;
 	if (bpf_skb_load_bytes(skb, dns_offset, ev->payload, dns_len) != 0) {
 		bpf_ringbuf_discard(ev, 0);
 		return 0;
 	}
-	/* TODO: zero ev->payload[dns_len..] to prevent uninitialized bytes leaking
-	 * to userspace. Deferred to the variable-length ringbuf refactor (task #10)
-	 * which will emit only sizeof(ev->len)+dns_len bytes, eliminating the issue. */
 	bpf_ringbuf_submit(ev, 0);
 
 	/* Return 0: we collect data via ring buffer, not via the socket fd */

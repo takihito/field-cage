@@ -163,7 +163,11 @@ int block_connect6(struct bpf_sock_addr *ctx)
 	// destination is not rejected here — it falls through to the allowlist
 	// lookup below like any other port, so an explicitly allowlisted IPv6
 	// address is still reachable on port 53; otherwise default-deny applies.
-	if (ctx->user_port == bpf_htons(53)) {
+	// Truncate user_port (__u32, port in the low 16 bits) to __u16 before the
+	// comparison so it never depends on the high bits being zero — same
+	// hardening as the dport parameter of check_ipv4.
+	__u16 dport = ctx->user_port;
+	if (dport == bpf_htons(53)) {
 		if (dns_allow_all())
 			return 1;
 		struct in6_key rk = {};
