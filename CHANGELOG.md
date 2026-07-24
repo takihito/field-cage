@@ -2,6 +2,30 @@
 
 Release notes are maintained automatically by [tagpr](https://github.com/Songmu/tagpr).
 
+## [v0.0.7](https://github.com/takihito/field-cage/compare/v0.0.6...v0.0.7) - 2026-07-24
+
+- Bump github/codeql-action from 3.36.2 to 4.36.2 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/42
+- fix: strip port suffix from domain entries in allowlist by @takihito in https://github.com/takihito/field-cage/pull/52
+- fix: remove connect_ms from log output by @takihito in https://github.com/takihito/field-cage/pull/51
+- feat: add IPv4 CIDR subnet support to allowlist by @takihito in https://github.com/takihito/field-cage/pull/53
+- feat: add IPv6 support (monitoring and block-mode enforcement) by @takihito in https://github.com/takihito/field-cage/pull/57
+- feat: restrict port 53 to trusted resolvers (opt-out via allow_all_dns) by @takihito in https://github.com/takihito/field-cage/pull/58
+- fix: harden event loops and unify diagnostics with slog by @takihito in https://github.com/takihito/field-cage/pull/59
+- fix: policy UX — optional mode, reject wildcards, store parsed IPs by @takihito in https://github.com/takihito/field-cage/pull/60
+- docs: sync DNS restriction and IPv6 details across README/CLAUDE.md by @takihito in https://github.com/takihito/field-cage/pull/61
+- refactor: unify resolver discovery, parallelize seed, share IPv4 policy (PR4) by @takihito in https://github.com/takihito/field-cage/pull/63
+- Bump actions/upload-artifact from 4.6.2 to 7.0.1 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/44
+- refactor: parse DNS responses with x/net/dns/dnsmessage (PR5) by @takihito in https://github.com/takihito/field-cage/pull/64
+- Bump ossf/scorecard-action from 2.4.2 to 2.4.3 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/43
+- fix: batch of small eBPF hardening fixes (LRU_HASH, DNS payload zeroing, IPv6 port truncation) by @takihito in https://github.com/takihito/field-cage/pull/68
+- build(deps): Bump github.com/cilium/ebpf from 0.21.0 to 0.22.0 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/54
+- Bump goreleaser/goreleaser-action from 7.2.2 to 7.2.3 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/55
+- build(deps): Bump golang.org/x/sys from 0.46.0 to 0.47.0 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/65
+- Bump step-security/harden-runner from 2.19.4 to 2.20.0 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/66
+- build(deps): Bump golang.org/x/net from 0.48.0 to 0.55.0 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/69
+- build(deps): Bump golang.org/x/net from 0.55.0 to 0.57.0 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/70
+- build(deps): Bump Songmu/tagpr from 1.20.0 to 1.20.1 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/71
+
 ## [v0.0.6](https://github.com/takihito/field-cage/compare/v0.0.5...v0.0.6) - 2026-06-26
 
 - fix: remove EXIT trap that deleted binary before agent start by @takihito in https://github.com/takihito/field-cage/pull/48
