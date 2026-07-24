@@ -8,7 +8,7 @@ require (
 	// internally; adopted for the attacker-controlled DNS-response parser
 	// instead of a hand-rolled one. Pinned to the same version as the other
 	// golang.org/x modules already in the graph.
-	golang.org/x/net v0.55.0
+	golang.org/x/net v0.57.0
 	golang.org/x/sys v0.47.0
 	gopkg.in/yaml.v3 v3.0.1
 )
