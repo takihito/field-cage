@@ -2,6 +2,10 @@
 
 Release notes are maintained automatically by [tagpr](https://github.com/Songmu/tagpr).
 
+## [v0.0.8](https://github.com/takihito/field-cage/compare/v0.0.7...v0.0.8) - 2026-07-27
+
+- feat: manage release version via internal/version file by @takihito in https://github.com/takihito/field-cage/pull/74
+
 ## [v0.0.7](https://github.com/takihito/field-cage/compare/v0.0.6...v0.0.7) - 2026-07-24
 
 - Bump github/codeql-action from 3.36.2 to 4.36.2 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/42
