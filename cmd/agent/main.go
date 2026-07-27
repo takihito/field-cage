@@ -15,15 +15,17 @@ import (
 	"github.com/takihito/field-cage/internal/ebpf"
 	"github.com/takihito/field-cage/internal/policy"
 	"github.com/takihito/field-cage/internal/report"
+	pkgversion "github.com/takihito/field-cage/internal/version"
 )
 
 // seedLookupTimeout bounds each startup DNS resolution so that a hung or
 // misconfigured resolver cannot stall block-mode startup indefinitely.
 const seedLookupTimeout = 5 * time.Second
 
-// version is the release version, injected at build time via
-// -ldflags "-X main.version=...". Defaults to "dev" for local builds.
-var version = "dev"
+// version is the release version. Defaults to the value tagpr maintains in
+// internal/version, and can be overridden at build time via
+// -ldflags "-X main.version=...".
+var version = pkgversion.Version
 
 var (
 	configPath  = flag.String("config", "", "path to YAML policy file (omit to allow all)")
