@@ -40,7 +40,7 @@ Composite Action でランナー上に field-cage を起動できます。指定
 
 ## 補足
 
-- **audit モードはどのワークフローにも安全に追加できます** — アウトバウンド接続を記録するだけで遮断しません。
+- **audit モードは通信を遮断しません** — アウトバウンド接続を記録するだけです。ただしこの Action は Linux ランナー（`ubuntu-*`、ホスト型・セルフホスト問わず）で passwordless `sudo` と eBPF サポートが必要です。macOS/Windows ランナー、非対応アーキテクチャ、権限が制限されたセルフホスト Linux ランナーでは、モードに関わらずバイナリ取得やエージェント起動に失敗しジョブが失敗します。
 - エージェントはバックグラウンドで動くため、**ログは後続ステップで確認**してください。例: `cat /tmp/field-cage.log`（パスは `log-file` 入力で変更可）、または artifact としてアップロード。Composite Action は後処理（post）ステップを持てないため、ログ回収と停止は呼び出し側で行います。
 - サンプルポリシーはリポジトリの [`.github/field-cage-policy.example.yml`](https://github.com/takihito/field-cage/blob/main/.github/field-cage-policy.example.yml) を参照してください。
 

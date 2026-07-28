@@ -40,7 +40,7 @@ For complex or shared policies:
 
 ## Notes
 
-- **Audit mode is safe to add to any workflow** — it only logs outbound connections and never blocks them.
+- **Audit mode never blocks traffic** — it only logs outbound connections. This action requires a Linux runner (`ubuntu-*`, hosted or self-hosted) with passwordless `sudo` and eBPF support; on macOS/Windows runners, unsupported architectures, or restricted self-hosted Linux runners, the action fails to download or start the agent, which fails the job regardless of mode.
 - The agent runs in the background; **view its log in a later step**, e.g. `cat /tmp/field-cage.log` (path configurable via the `log-file` input), or upload it as an artifact. Composite actions cannot run an automatic post-job step, so log collection and shutdown are left to the caller.
 - See [`.github/field-cage-policy.example.yml`](https://github.com/takihito/field-cage/blob/main/.github/field-cage-policy.example.yml) in the repository for a sample policy.
 
