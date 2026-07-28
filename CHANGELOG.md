@@ -2,7 +2,7 @@
 
 Release notes are maintained automatically by [tagpr](https://github.com/Songmu/tagpr).
 
-## [v0.0.8](https://github.com/takihito/field-cage/compare/v0.0.7...v0.0.8) - 2026-07-27
+## [v0.1.0](https://github.com/takihito/field-cage/compare/v0.0.7...v0.1.0) - 2026-07-27
 
 - feat: manage release version via internal/version file by @takihito in https://github.com/takihito/field-cage/pull/74
 
