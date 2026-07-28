@@ -1,0 +1,69 @@
+---
+layout: default
+title: field-cage Usage
+description: Policy file format and standalone binary usage for field-cage.
+---
+
+# Usage
+
+## Policy file
+
+```yaml
+mode: block          # optional: audit or block; defaults to audit when omitted
+                     # (the --mode flag overrides this in either case)
+allow_all_dns: false # optional; see "DNS handling" below (default false)
+
+allowlist:
+  - github.com
+  - api.github.com
+  - codeload.github.com
+  - objects.githubusercontent.com
+  - 1.2.3.4             # single IPv4 address
+  - 2001:db8::1         # single IPv6 address
+  - 10.0.0.0/8          # IPv4 CIDR subnet (private range)
+  - 203.0.113.0/24      # any /N prefix length is supported
+  - 2001:db8::/32       # IPv6 CIDR subnet
+```
+
+> **Note**: Wildcards (`*.github.com`) are not supported — an entry containing `*` is rejected when the policy is loaded. List each subdomain explicitly.
+>
+> **Strict keys**: Unknown keys are rejected when the policy is loaded, so a misspelled key (e.g. `mdoe:`) fails fast instead of silently falling back to defaults.
+>
+> **CIDR**: A CIDR entry seeds the eBPF LPM trie directly, so all addresses in the subnet are permitted without per-IP DNS resolution.
+>
+> **DNS handling**: By default, port 53 is permitted only to the resolvers configured in `/etc/resolv.conf` plus loopback — this prevents a port-53 listener on an arbitrary host from being used as a general outbound tunnel. Set `allow_all_dns: true` to permit port 53 to any destination (the pre-0.x behavior). Even under the default, DNS *tunneling* through a legitimate resolver (data encoded in subdomains, resolved recursively) is not blocked; see Limitations below.
+
+## Standalone binary
+
+```sh
+# Audit mode — log all connections, no policy file required
+sudo ./field-cage
+
+# Audit mode with a policy file
+sudo ./field-cage --config policy.yml
+
+# Block mode — default-deny; only allowlisted destinations are permitted.
+# A policy file is required (block mode without one would deny all traffic).
+sudo ./field-cage --config policy.yml --mode block
+
+# Print version
+./field-cage --version
+```
+
+Pre-built binaries (`linux/amd64`, `linux/arm64`) are published on the [Releases](https://github.com/takihito/field-cage/releases) page.
+
+## Block mode enforcement model
+
+Block mode is **default-deny**: the `cgroup/connect4` and `cgroup/connect6` programs reject every outbound IPv4/IPv6 connection unless its destination IP is on the allowlist. IPv4-mapped IPv6 destinations (`::ffff:a.b.c.d`, the path dual-stack runtimes such as Node.js and Java take to IPv4 hosts) are checked against the IPv4 allowlist, so one IPv4 entry covers both socket families. The allowlist is built by:
+
+1. **Startup seeding** — explicit IP and CIDR entries are added directly, and each allowlisted domain is resolved (A and AAAA) and its addresses added.
+2. **Live DNS observation** — when a DNS response for an allowlisted domain is seen on the wire, its A/AAAA-record IPs are added to the allowlist before the application connects. Only responses originating from a configured resolver (the `nameserver` entries in `/etc/resolv.conf`) or from loopback are trusted for this; responses from any other source are cached for logging but never extend the kernel allowlist, so a forged response with a spoofed source port 53 cannot poison it.
+
+Loopback (`127.0.0.0/8` and `::1`) is always permitted so that local services keep working. DNS (destination port 53) is permitted only to the system's resolvers (plus loopback) so that name resolution works without turning port 53 into a general outbound tunnel to arbitrary hosts; set `allow_all_dns: true` in the policy to restore unconditional port-53 access. If no resolvers can be determined at startup, only loopback DNS is permitted (fail-closed). A policy file is required in block mode; without one the agent refuses to start rather than deny all traffic.
+
+## Limitations
+
+- **First-connection race (fail-closed)**: a connection to an allowlisted domain may be denied on the very first attempt if the application connects before the observed DNS response is applied to the map. This fails *closed* (the connection is denied, not leaked); the application's retry succeeds once the map is updated. Startup seeding avoids this for domains resolvable at launch.
+- **DNS tunneling through a legitimate resolver is not blocked**: port 53 to configured resolvers (and loopback) is permitted so name resolution works. An attacker can still encode data in subdomains and have a trusted resolver recursively resolve them. This is low-bandwidth and remains visible in the DNS monitoring logs.
+- **Live allowlisting only observes plaintext UDP DNS over IPv4 transport (port 53)**: DNS carried over IPv6 transport, TCP, or encrypted (DoH/DoT) is not observed. Domains resolved via unobserved channels are only covered by startup seeding; if their addresses rotate afterwards, block mode will deny the new IPs (fail-closed). Keep such domains pinned by IP in the policy, or ensure they resolve via plaintext UDP over IPv4.
+- **DNS packet monitoring requires `CAP_NET_RAW`**: In block mode, failure to start DNS packet monitoring is fatal (fail-closed). In audit mode it is best-effort.

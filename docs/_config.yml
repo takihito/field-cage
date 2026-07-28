@@ -1,0 +1,29 @@
+title: field-cage
+description: A lightweight eBPF agent that monitors and restricts outbound network connections on GitHub Actions runners.
+remote_theme: pages-themes/slate@v0.2.0
+plugins:
+  - jekyll-remote-theme
+
+url: https://takihito.github.io
+baseurl: /field-cage
+
+# Navigation (used in default layout override)
+nav:
+  - title: Home
+    url: /field-cage/
+  - title: Usage
+    url: /field-cage/usage
+  - title: GitHub Actions
+    url: /field-cage/github-actions
+  - title: 日本語
+    url: /field-cage/ja/
+  - title: GitHub
+    url: https://github.com/takihito/field-cage
+
+defaults:
+  # apply the default layout to all markdown pages
+  - scope:
+      path: "*"
+    values:
+      layout: default
+      render_with_liquid: false
