@@ -1,6 +1,6 @@
 #!/bin/sh
 # field-cage installer for Linux
-# Usage: curl -sSL https://takihito.github.io/field-cage/install.sh | sh
+# Usage: curl -fsSL https://takihito.github.io/field-cage/install.sh | sh
 #
 # field-cage requires Linux eBPF (cgroup/connect4, connect6, tracepoints) to
 # run, so only linux/amd64 and linux/arm64 binaries are published. There is
@@ -50,7 +50,7 @@ fi
 VERSION="${1:-${FIELD_CAGE_VERSION:-}}"
 if [ -z "$VERSION" ]; then
   echo "Fetching latest version..."
-  VERSION="$(curl -sSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')"
+  VERSION="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')"
   if [ -z "$VERSION" ]; then
     echo "Error: failed to fetch latest version"
     exit 1
@@ -66,8 +66,8 @@ WORK="$(mktemp -d 2>/dev/null || mktemp -d -t field-cage)"
 trap 'rm -rf "$WORK"' EXIT
 
 echo "Downloading ${BINARY}..."
-curl -sSL -o "${WORK}/${BINARY}" "${BASE_URL}/${BINARY}"
-curl -sSL -o "${WORK}/${CHECKSUMS}" "${BASE_URL}/${CHECKSUMS}"
+curl -fsSL -o "${WORK}/${BINARY}" "${BASE_URL}/${BINARY}"
+curl -fsSL -o "${WORK}/${CHECKSUMS}" "${BASE_URL}/${CHECKSUMS}"
 
 # Authenticate checksums.txt before trusting it: a sha256 match alone does not
 # protect against a compromised release where both the binary and
@@ -76,7 +76,7 @@ curl -sSL -o "${WORK}/${CHECKSUMS}" "${BASE_URL}/${CHECKSUMS}"
 # performs) before trusting the checksum.
 if command -v cosign >/dev/null 2>&1; then
   echo "Verifying checksums.txt signature (cosign)..."
-  curl -sSL -o "${WORK}/${CHECKSUMS}.bundle" "${BASE_URL}/${CHECKSUMS}.bundle"
+  curl -fsSL -o "${WORK}/${CHECKSUMS}.bundle" "${BASE_URL}/${CHECKSUMS}.bundle"
   cosign verify-blob \
     --bundle "${WORK}/${CHECKSUMS}.bundle" \
     --certificate-identity "https://github.com/${REPO}/.github/workflows/release.yml@refs/tags/${VERSION}" \
@@ -110,7 +110,7 @@ if [ ! -d "$INSTALL_DIR" ]; then
   mkdir -p "$INSTALL_DIR" 2>/dev/null || {
     echo "Error: cannot create ${INSTALL_DIR} (permission denied)"
     echo "Choose a writable directory or run with sudo:"
-    echo "  curl -sSL https://takihito.github.io/field-cage/install.sh | sudo FIELD_CAGE_INSTALL_DIR=${INSTALL_DIR} sh"
+    echo "  curl -fsSL https://takihito.github.io/field-cage/install.sh | sudo FIELD_CAGE_INSTALL_DIR=${INSTALL_DIR} sh"
     exit 1
   }
 fi
@@ -119,7 +119,7 @@ if [ -w "$INSTALL_DIR" ]; then
 else
   echo "Error: ${INSTALL_DIR} is not writable"
   echo "Choose a writable directory or run with sudo:"
-  echo "  curl -sSL https://takihito.github.io/field-cage/install.sh | sudo FIELD_CAGE_INSTALL_DIR=${INSTALL_DIR} sh"
+  echo "  curl -fsSL https://takihito.github.io/field-cage/install.sh | sudo FIELD_CAGE_INSTALL_DIR=${INSTALL_DIR} sh"
   exit 1
 fi
 echo "Installed to ${INSTALL_DIR}/field-cage"
