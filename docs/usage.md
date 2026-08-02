@@ -35,22 +35,38 @@ allowlist:
 
 ## Standalone binary
 
+### Install
+
+```sh
+curl -fsSL https://takihito.github.io/field-cage/install.sh | sh
+```
+
+Installs to `~/.local/bin` by default (no `sudo` required for installation). To change the install directory:
+
+```sh
+curl -fsSL https://takihito.github.io/field-cage/install.sh | FIELD_CAGE_INSTALL_DIR=/usr/local/bin sh
+```
+
+Requires Linux (`amd64` or `arm64`) — field-cage depends on eBPF and has no macOS or Windows build. For pre-built binaries or manual downloads, see the [Releases](https://github.com/takihito/field-cage/releases) page.
+
+### Run
+
 ```sh
 # Audit mode — log all connections, no policy file required
-sudo ./field-cage
+sudo field-cage
 
 # Audit mode with a policy file
-sudo ./field-cage --config policy.yml
+sudo field-cage --config policy.yml
 
 # Block mode — default-deny; only allowlisted destinations are permitted.
 # A policy file is required (block mode without one would deny all traffic).
-sudo ./field-cage --config policy.yml --mode block
+sudo field-cage --config policy.yml --mode block
 
 # Print version
-./field-cage --version
+field-cage --version
 ```
 
-Pre-built binaries (`linux/amd64`, `linux/arm64`) are published on the [Releases](https://github.com/takihito/field-cage/releases) page.
+> `sudo` resets `PATH` on some systems, so if `sudo field-cage` reports "command not found", use the full path (e.g. `sudo ~/.local/bin/field-cage`) or run `sudo` with `-E`/`--preserve-env=PATH`.
 
 ## Block mode enforcement model
 

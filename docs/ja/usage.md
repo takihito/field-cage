@@ -35,22 +35,38 @@ allowlist:
 
 ## スタンドアロンバイナリ
 
+### インストール
+
+```sh
+curl -fsSL https://takihito.github.io/field-cage/install.sh | sh
+```
+
+デフォルトでは `~/.local/bin` にインストールされます（インストール自体に `sudo` は不要）。インストール先を変更する場合:
+
+```sh
+curl -fsSL https://takihito.github.io/field-cage/install.sh | FIELD_CAGE_INSTALL_DIR=/usr/local/bin sh
+```
+
+Linux（`amd64` または `arm64`）が必要です — field-cage は eBPF に依存するため macOS / Windows 版はありません。事前ビルド済みバイナリの手動ダウンロードは[Releases](https://github.com/takihito/field-cage/releases)ページを参照してください。
+
+### 実行
+
 ```sh
 # Audit モード（ポリシーなし・全通信をログ出力）
-sudo ./field-cage
+sudo field-cage
 
 # Audit モード（ポリシーファイルあり）
-sudo ./field-cage --config policy.yml
+sudo field-cage --config policy.yml
 
 # Block モード（デフォルト拒否。allowlist の宛先のみ許可）
 # ポリシーファイルは必須（無いと全接続が拒否されるため起動しません）
-sudo ./field-cage --config policy.yml --mode block
+sudo field-cage --config policy.yml --mode block
 
 # バージョン表示
-./field-cage --version
+field-cage --version
 ```
 
-事前ビルド済みバイナリ（`linux/amd64`・`linux/arm64`）は[Releases](https://github.com/takihito/field-cage/releases)ページで公開されています。
+> システムによっては `sudo` が `PATH` をリセットするため、`sudo field-cage` が "command not found" になる場合はフルパス指定（例: `sudo ~/.local/bin/field-cage`）するか、`sudo -E`/`--preserve-env=PATH` を使ってください。
 
 ## Block モードの遮断モデル
 
