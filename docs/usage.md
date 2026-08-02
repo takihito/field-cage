@@ -53,18 +53,20 @@ Requires Linux (`amd64` or `arm64`) — field-cage depends on eBPF and has no ma
 
 ```sh
 # Audit mode — log all connections, no policy file required
-sudo ./field-cage
+sudo field-cage
 
 # Audit mode with a policy file
-sudo ./field-cage --config policy.yml
+sudo field-cage --config policy.yml
 
 # Block mode — default-deny; only allowlisted destinations are permitted.
 # A policy file is required (block mode without one would deny all traffic).
-sudo ./field-cage --config policy.yml --mode block
+sudo field-cage --config policy.yml --mode block
 
 # Print version
-./field-cage --version
+field-cage --version
 ```
+
+> `sudo` resets `PATH` on some systems, so if `sudo field-cage` reports "command not found", use the full path (e.g. `sudo ~/.local/bin/field-cage`) or run `sudo` with `-E`/`--preserve-env=PATH`.
 
 ## Block mode enforcement model
 

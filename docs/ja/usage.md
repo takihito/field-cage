@@ -53,18 +53,20 @@ Linux（`amd64` または `arm64`）が必要です — field-cage は eBPF に�
 
 ```sh
 # Audit モード（ポリシーなし・全通信をログ出力）
-sudo ./field-cage
+sudo field-cage
 
 # Audit モード（ポリシーファイルあり）
-sudo ./field-cage --config policy.yml
+sudo field-cage --config policy.yml
 
 # Block モード（デフォルト拒否。allowlist の宛先のみ許可）
 # ポリシーファイルは必須（無いと全接続が拒否されるため起動しません）
-sudo ./field-cage --config policy.yml --mode block
+sudo field-cage --config policy.yml --mode block
 
 # バージョン表示
-./field-cage --version
+field-cage --version
 ```
+
+> システムによっては `sudo` が `PATH` をリセットするため、`sudo field-cage` が "command not found" になる場合はフルパス指定（例: `sudo ~/.local/bin/field-cage`）するか、`sudo -E`/`--preserve-env=PATH` を使ってください。
 
 ## Block モードの遮断モデル
 

@@ -13,7 +13,7 @@ INSTALL_DIR="${FIELD_CAGE_INSTALL_DIR:-${HOME}/.local/bin}"
 # Resolve INSTALL_DIR to absolute path
 case "$INSTALL_DIR" in
   /*) ;;
-  ~/*) INSTALL_DIR="${HOME}/${INSTALL_DIR#~/}" ;;
+  \~/*) INSTALL_DIR="${HOME}/${INSTALL_DIR#\~/}" ;;
   *) INSTALL_DIR="$(pwd)/${INSTALL_DIR}" ;;
 esac
 
@@ -68,6 +68,26 @@ trap 'rm -rf "$WORK"' EXIT
 echo "Downloading ${BINARY}..."
 curl -sSL -o "${WORK}/${BINARY}" "${BASE_URL}/${BINARY}"
 curl -sSL -o "${WORK}/${CHECKSUMS}" "${BASE_URL}/${CHECKSUMS}"
+
+# Authenticate checksums.txt before trusting it: a sha256 match alone does not
+# protect against a compromised release where both the binary and
+# checksums.txt were replaced together. If cosign is available, verify the
+# signature bundle the release workflow publishes (same check action.yml
+# performs) before trusting the checksum.
+if command -v cosign >/dev/null 2>&1; then
+  echo "Verifying checksums.txt signature (cosign)..."
+  curl -sSL -o "${WORK}/${CHECKSUMS}.bundle" "${BASE_URL}/${CHECKSUMS}.bundle"
+  cosign verify-blob \
+    --bundle "${WORK}/${CHECKSUMS}.bundle" \
+    --certificate-identity "https://github.com/${REPO}/.github/workflows/release.yml@refs/tags/${VERSION}" \
+    --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+    "${WORK}/${CHECKSUMS}"
+else
+  echo "Warning: cosign not found; skipping checksums.txt signature verification." >&2
+  echo "  sha256 integrity is still checked below, but that alone does not" >&2
+  echo "  protect against a compromised release. Install cosign for full" >&2
+  echo "  verification: https://docs.sigstore.dev/cosign/system_config/installation/" >&2
+fi
 
 # Verify checksum
 echo "Verifying checksum..."
