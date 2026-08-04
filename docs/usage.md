@@ -44,7 +44,7 @@ curl -fsSL https://takihito.github.io/field-cage/install.sh | sh
 Installs to `~/.local/bin` by default (no `sudo` required for installation). To change the install directory:
 
 ```sh
-curl -fsSL https://takihito.github.io/field-cage/install.sh | FIELD_CAGE_INSTALL_DIR=/usr/local/bin sh
+curl -fsSL https://takihito.github.io/field-cage/install.sh | sudo FIELD_CAGE_INSTALL_DIR=/usr/local/bin sh
 ```
 
 Requires Linux (`amd64` or `arm64`) — field-cage depends on eBPF and has no macOS or Windows build. For pre-built binaries or manual downloads, see the [Releases](https://github.com/takihito/field-cage/releases) page.
