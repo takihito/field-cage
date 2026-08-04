@@ -3,7 +3,7 @@
 
 **field-cage** は GitHub Actions のビルド中にサプライチェーン攻撃（不正なデータ送信・外部コード取得）を検知・防止するための軽量ネットワーク監視ツール。eBPF を使い Linux カーネルレベルでネットワーク syscall を監視する。
 
-- **言語**: Go 1.22 (エージェント) + C (eBPF プログラム)
+- **言語**: Go（`go.mod` 参照。エージェント）+ C (eBPF プログラム)
 - **eBPF ライブラリ**: `cilium/ebpf`、コード生成: `bpf2go`
 - **配布**: `CGO_ENABLED=0` 完全静的バイナリ、Composite Action (`action.yml`)
 - **動作モード**: Audit（ログのみ）/ Block（遮断）予定
@@ -49,7 +49,7 @@ internal/ebpf/
   dns_cache.go      DNSCache + dnsWatcher: DNS レスポンス捕捉・IP→ドメイン変換
   *_test.go         ユニットテスト (//go:build linux)
   watcher_integration_test.go  統合テスト (//go:build linux && integration)
-Dockerfile          Multi-stage ビルド (builder: golang:1.22-bullseye / runtime: distroless)
+Dockerfile          Multi-stage ビルド (builder: golang:1.25-bookworm / runtime: distroless)
 Makefile            tidy / build / run / test / clean / setup-hooks
 .githooks/pre-push  push 前に make test を自動実行
 ```
