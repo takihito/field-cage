@@ -64,20 +64,38 @@ allowlist:
 
 ## 使い方
 
+### インストール
+
+```sh
+curl -fsSL https://takihito.github.io/field-cage/install.sh | sh
+```
+
+デフォルトでは `~/.local/bin` にインストールされます（インストール自体に `sudo` は不要）。インストール先を変更する場合:
+
+```sh
+curl -fsSL https://takihito.github.io/field-cage/install.sh | FIELD_CAGE_INSTALL_DIR=/usr/local/bin sh
+```
+
+Linux（`amd64` または `arm64`）が必要です — field-cage は eBPF に依存するため macOS / Windows 版はありません。事前ビルド済みバイナリの手動ダウンロードは[Releases](https://github.com/takihito/field-cage/releases)ページを参照してください。
+
+### 実行
+
 ```sh
 # Audit モード（ポリシーなし・全通信をログ出力）
-sudo ./field-cage
+sudo field-cage
 
 # Audit モード（ポリシーファイルあり）
-sudo ./field-cage --config policy.yml
+sudo field-cage --config policy.yml
 
 # Block モード（デフォルト拒否。allowlist の宛先のみ許可）
 # ポリシーファイルは必須（無いと全接続が拒否されるため起動しません）
-sudo ./field-cage --config policy.yml --mode block
+sudo field-cage --config policy.yml --mode block
 
 # バージョン表示
-./field-cage --version
+field-cage --version
 ```
+
+> システムによっては `sudo` が `PATH` をリセットするため、`sudo field-cage` が "command not found" になる場合はフルパス指定（例: `sudo ~/.local/bin/field-cage`）するか、`sudo -E`/`--preserve-env=PATH` を使ってください。
 
 ## GitHub Actions での利用
 
@@ -111,8 +129,11 @@ Composite Action でランナー上に field-cage を起動できます。指定
 
 `allow` と `config` は同時に指定できません。両方を指定するとエラーになります。
 
-- **audit モードはどのワークフローにも安全に追加できます** — アウトバウンド接続を
-  記録するだけで遮断しません。
+- **audit モードは通信を遮断しません** — アウトバウンド接続を記録するだけです。
+  ただしこの Action は Linux ランナー（`ubuntu-*`、ホスト型・セルフホスト問わず）で
+  passwordless `sudo` と eBPF サポートが必要です。macOS/Windows ランナー、非対応
+  アーキテクチャ、権限が制限されたセルフホスト Linux ランナーでは、モードに
+  関わらずバイナリ取得やエージェント起動に失敗しジョブが失敗します。
 - エージェントはバックグラウンドで動くため、**ログは後続ステップで確認**してください。
   例: `cat /tmp/field-cage.log`（パスは `log-file` 入力で変更可）、または artifact として
   アップロード。Composite Action は後処理（post）ステップを持てないため、ログ回収と停止は
@@ -229,8 +250,8 @@ Block モードは **デフォルト拒否（default-deny）** です。`cgroup/
 
 | レイヤー | 技術 |
 |----------|------|
-| エージェント | Go 1.22 |
+| エージェント | Go 1.25 |
 | eBPF プログラム | C（`bpf2go` でコンパイル） |
-| eBPF Go バインディング | `cilium/ebpf v0.14.0` |
+| eBPF Go バインディング | `cilium/ebpf v0.22.0` |
 | ポリシー設定 | YAML（`gopkg.in/yaml.v3`） |
 | ビルド | `CGO_ENABLED=0` 完全静的バイナリ |

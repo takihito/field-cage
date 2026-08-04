@@ -18,10 +18,10 @@ Key goals:
 
 | Layer | Technology |
 |---|---|
-| Agent | Go 1.21+ |
+| Agent | Go (see `go.mod` for the pinned version) |
 | eBPF programs | C, compiled via `bpf2go` |
 | eBPF Go bindings | `cilium/ebpf` |
-| DNS packet parsing | hand-written parser (`internal/ebpf/dns_parse.go`) |
+| DNS packet parsing | `golang.org/x/net/dns/dnsmessage` (`internal/ebpf/dns_parse.go`) |
 | Config format | YAML |
 | Distribution | GitHub Releases via GoReleaser, Composite Action (`action.yml`) |
 | Build | `CGO_ENABLED=0` fully static binary |
@@ -42,9 +42,9 @@ Key goals:
 
 ### GitHub Action
 - Implemented as a Composite Action (`action.yml`), no TypeScript
-- Downloads binary from GitHub Releases via `curl` with a pinned version tag
-- Verifies the binary with `sha256sum` against a published checksum file before execution
-- Runs as `sudo ./agent --config policy.yml &` in the background
+- Downloads `checksums.txt` from GitHub Releases via `curl` with a pinned version tag, then verifies it was signed by the release workflow with `cosign verify-blob` (using the `checksums.txt.bundle` asset) before trusting it
+- Downloads the binary and verifies it with `sha256sum -c` against the now-trusted checksum file
+- Runs the binary as `sudo nohup <binary> [--config ...] [--mode ...] > <log-file> 2>&1 &` in the background; the `allow` input is translated into a temporary policy file (mutually exclusive with `config`)
 
 ## Development Commands
 
@@ -92,3 +92,6 @@ Development milestones
 5. Log quality: `SKIP(dns)` / `SKIP(loopback)` verdicts ✅; TCP connection timing (connect_ns is captured but not logged; pending decision on display format)
 6. IPv6 support: monitoring and block-mode enforcement (`cgroup/connect6`, `allowed_ips6`) ✅
 7. DNS hardening: port 53 restricted to trusted resolvers (opt-out via `allow_all_dns`), DNS-response source validation for live allowlisting ✅
+8. Policy UX hardening: CIDR/LPM-trie allowlist entries, strict unknown-key rejection, wildcard-entry rejection, `--version` flag ✅
+9. Supply-chain hardening: cosign keyless signing + SLSA Level 3 provenance on releases, tagpr-managed versioning, YAML-injection-safe quoting for the `allow` action input ✅
+10. Distribution: GitHub Pages documentation site and `curl | sh` install script (Linux only — no macOS/Windows build) ✅

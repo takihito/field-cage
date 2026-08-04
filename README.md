@@ -63,20 +63,38 @@ allowlist:
 
 ## Usage
 
+### Install
+
+```sh
+curl -fsSL https://takihito.github.io/field-cage/install.sh | sh
+```
+
+Installs to `~/.local/bin` by default (no `sudo` required for installation). To change the install directory:
+
+```sh
+curl -fsSL https://takihito.github.io/field-cage/install.sh | FIELD_CAGE_INSTALL_DIR=/usr/local/bin sh
+```
+
+Requires Linux (`amd64` or `arm64`) — field-cage depends on eBPF and has no macOS or Windows build. For pre-built binaries or manual downloads, see the [Releases](https://github.com/takihito/field-cage/releases) page.
+
+### Run
+
 ```sh
 # Audit mode — log all connections, no policy file required
-sudo ./field-cage
+sudo field-cage
 
 # Audit mode with a policy file
-sudo ./field-cage --config policy.yml
+sudo field-cage --config policy.yml
 
 # Block mode — default-deny; only allowlisted destinations are permitted.
 # A policy file is required (block mode without one would deny all traffic).
-sudo ./field-cage --config policy.yml --mode block
+sudo field-cage --config policy.yml --mode block
 
 # Print version
-./field-cage --version
+field-cage --version
 ```
+
+> `sudo` resets `PATH` on some systems, so if `sudo field-cage` reports "command not found", use the full path (e.g. `sudo ~/.local/bin/field-cage`) or run `sudo` with `-E`/`--preserve-env=PATH`.
 
 ## GitHub Actions
 
@@ -110,8 +128,12 @@ the background for the rest of the job.
 
 `allow` and `config` are mutually exclusive — using both at the same time is an error.
 
-- **Audit mode is safe to add to any workflow** — it only logs outbound
-  connections and never blocks them.
+- **Audit mode never blocks traffic** — it only logs outbound connections.
+  This action requires a Linux runner (`ubuntu-*`, hosted or self-hosted)
+  with passwordless `sudo` and eBPF support; on macOS/Windows runners,
+  unsupported architectures, or restricted self-hosted Linux runners, the
+  action fails to download or start the agent, which fails the job
+  regardless of mode.
 - The agent runs in the background; **view its log in a later step**, e.g.
   `cat /tmp/field-cage.log` (path configurable via the `log-file` input), or
   upload it as an artifact. Composite actions cannot run an automatic
@@ -228,8 +250,8 @@ Loopback (`127.0.0.0/8` and `::1`) is always permitted so that local services ke
 
 | Layer | Technology |
 |-------|-----------|
-| Agent | Go 1.22 |
+| Agent | Go 1.25 |
 | eBPF programs | C, compiled via `bpf2go` |
-| eBPF Go bindings | `cilium/ebpf v0.14.0` |
+| eBPF Go bindings | `cilium/ebpf v0.22.0` |
 | Policy config | YAML (`gopkg.in/yaml.v3`) |
 | Build | `CGO_ENABLED=0` fully-static binary |
