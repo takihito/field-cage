@@ -2,6 +2,8 @@
 
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/takihito/field-cage/badge)](https://securityscorecards.dev/viewer/?uri=github.com/takihito/field-cage)
 
+**[Documentation](https://takihito.github.io/field-cage/)** | [日本語ドキュメント](https://takihito.github.io/field-cage/ja/)
+
 A lightweight eBPF agent that monitors and restricts outbound network connections on GitHub Actions runners, designed to detect and prevent supply-chain attacks such as unauthorized data exfiltration or external code fetching during builds.
 
 ## Overview
