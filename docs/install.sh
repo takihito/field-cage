@@ -110,7 +110,7 @@ if [ ! -d "$INSTALL_DIR" ]; then
   mkdir -p "$INSTALL_DIR" 2>/dev/null || {
     echo "Error: cannot create ${INSTALL_DIR} (permission denied)"
     echo "Choose a writable directory or run with sudo:"
-    echo "  curl -fsSL https://takihito.github.io/field-cage/install.sh | sudo FIELD_CAGE_INSTALL_DIR=${INSTALL_DIR} sh"
+    echo "  curl -fsSL https://takihito.github.io/field-cage/install.sh | sudo env FIELD_CAGE_INSTALL_DIR=${INSTALL_DIR} sh"
     exit 1
   }
 fi
@@ -119,7 +119,7 @@ if [ -w "$INSTALL_DIR" ]; then
 else
   echo "Error: ${INSTALL_DIR} is not writable"
   echo "Choose a writable directory or run with sudo:"
-  echo "  curl -fsSL https://takihito.github.io/field-cage/install.sh | sudo FIELD_CAGE_INSTALL_DIR=${INSTALL_DIR} sh"
+  echo "  curl -fsSL https://takihito.github.io/field-cage/install.sh | sudo env FIELD_CAGE_INSTALL_DIR=${INSTALL_DIR} sh"
   exit 1
 fi
 echo "Installed to ${INSTALL_DIR}/field-cage"

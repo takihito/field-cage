@@ -44,7 +44,7 @@ curl -fsSL https://takihito.github.io/field-cage/install.sh | sh
 デフォルトでは `~/.local/bin` にインストールされます（インストール自体に `sudo` は不要）。インストール先を変更する場合:
 
 ```sh
-curl -fsSL https://takihito.github.io/field-cage/install.sh | sudo FIELD_CAGE_INSTALL_DIR=/usr/local/bin sh
+curl -fsSL https://takihito.github.io/field-cage/install.sh | sudo env FIELD_CAGE_INSTALL_DIR=/usr/local/bin sh
 ```
 
 Linux（`amd64` または `arm64`）が必要です — field-cage は eBPF に依存するため macOS / Windows 版はありません。事前ビルド済みバイナリの手動ダウンロードは[Releases](https://github.com/takihito/field-cage/releases)ページを参照してください。
