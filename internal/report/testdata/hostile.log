@@ -1,0 +1,4 @@
+time=2026-08-20T12:00:00.000Z level=INFO msg="watching outbound connections (Ctrl+C to stop)" version=v0.1.0 mode="audit (no policy)"
+verdict=DENY(not-in-policy)  pid=2001   tgid=2001   comm=a|b <s>          dst=evil|<img src=x>.example (203.0.113.9):443
+verdict=DENY(not-in-policy)  pid=2002   tgid=2002   comm=::set-output     dst=x::warning::pwn.example (203.0.113.10):443
+verdict=ALLOW                pid=2003   tgid=2003   comm=sh               dst=100%.example (203.0.113.11):80

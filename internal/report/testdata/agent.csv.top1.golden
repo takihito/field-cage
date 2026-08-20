@@ -1,0 +1,2 @@
+verdict,destination,domain,ip,port,count,processes
+DENY(not-in-policy),telemetry.example.com,telemetry.example.com,203.0.113.7,443,2,curl

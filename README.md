@@ -142,6 +142,11 @@ the background for the rest of the job.
   post-job step, so log collection and shutdown are left to the caller.
 - See [`.github/field-cage-policy.example.yml`](.github/field-cage-policy.example.yml)
   for a sample policy.
+- Add `takihito/field-cage/report@v0.1.0` (`if: always()`) at the end of the
+  job for a formatted job summary and denial annotations, or run
+  `field-cage report --log /tmp/field-cage.log --format text|json|csv`
+  yourself. See [the GitHub Actions docs](https://takihito.github.io/field-cage/github-actions/)
+  for details.
 
 ### Releases
 

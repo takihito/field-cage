@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "mode": "audit (no policy)",
+  "total_events": 3,
+  "malformed_lines": 0,
+  "by_verdict": {
+    "ALLOW": 1,
+    "DENY(not-in-policy)": 2
+  },
+  "destinations": [
+    {
+      "verdict": "DENY(not-in-policy)",
+      "destination": "evil|\u003cimg src=x\u003e.example",
+      "domain": "evil|\u003cimg src=x\u003e.example",
+      "ip": "203.0.113.9",
+      "port": 443,
+      "count": 1,
+      "processes": [
+        "a|b \u003cs\u003e"
+      ],
+      "more_processes": 0
+    },
+    {
+      "verdict": "DENY(not-in-policy)",
+      "destination": "x::warning::pwn.example",
+      "domain": "x::warning::pwn.example",
+      "ip": "203.0.113.10",
+      "port": 443,
+      "count": 1,
+      "processes": [
+        "::set-output"
+      ],
+      "more_processes": 0
+    },
+    {
+      "verdict": "ALLOW",
+      "destination": "100%.example",
+      "domain": "100%.example",
+      "ip": "203.0.113.11",
+      "port": 80,
+      "count": 1,
+      "processes": [
+        "sh"
+      ],
+      "more_processes": 0
+    }
+  ],
+  "omitted_destinations": 0,
+  "suggested_allowlist": [
+    "100%.example",
+    "evil|\u003cimg src=x\u003e.example",
+    "x::warning::pwn.example"
+  ]
+}

@@ -89,6 +89,17 @@ runs:
       run: |
         set -euo pipefail
 
+        # FC_LOG and FC_MODE are appended as single-line "KEY=value" records to
+        # GITHUB_ENV below. Neither legitimately contains a newline; reject one
+        # rather than let it start a second, attacker-chosen "KEY=value" record
+        # that later steps (including "if: always()" ones) would then run with.
+        case "${FC_LOG}"$'\n'"${FC_MODE}" in
+          *$'\n'*$'\n'*)
+            echo "::error::field-cage: 'log-file' and 'mode' inputs must not contain newlines." >&2
+            exit 1
+            ;;
+        esac
+
         # `allow` and `config` are mutually exclusive: using both at once is an error.
         if [ -n "${FC_ALLOW}" ] && [ -n "${FC_CONFIG}" ]; then
           echo "::error::Cannot use both 'allow' and 'config' inputs at the same time. Use one or the other." >&2
@@ -122,6 +133,16 @@ runs:
         echo "field-cage: starting agent (log: ${FC_LOG})"
         sudo nohup "${FC_BIN}" "${args[@]}" > "${FC_LOG}" 2>&1 &
         FC_PID=$!
+
+        # Exposed so a later `takihito/field-cage/report` step can find the log
+        # and the binary without the caller repeating the log-file input.
+        # FC_MODE is only exported when explicitly overridden here: when it is
+        # left to the policy file (or defaulted to audit), the report step
+        # recovers the effective mode from the agent's own startup log line.
+        echo "FC_LOG=${FC_LOG}" >> "$GITHUB_ENV"
+        if [ -n "${FC_MODE}" ]; then
+          echo "FC_MODE=${FC_MODE}" >> "$GITHUB_ENV"
+        fi
         # Give the agent a moment to load its eBPF programs before later steps
         # generate traffic. The agent keeps running for the rest of the job.
         sleep 2

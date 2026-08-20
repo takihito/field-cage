@@ -1,0 +1,15 @@
+verdict,pid,tgid,comm,destination,domain,ip,port
+SKIP(dns),1010,1010,curl,10.0.0.2,,10.0.0.2,53
+SKIP(dns),1011,1010,curl,10.0.0.2,,10.0.0.2,53
+SKIP(dns),1012,1010,curl,10.0.0.2,,10.0.0.2,53
+ALLOW,1011,1011,curl,github.com,github.com,140.82.113.4,443
+ALLOW,1012,1011,curl,github.com,github.com,140.82.113.4,443
+ALLOW,1013,1011,curl,github.com,github.com,140.82.113.4,443
+ALLOW,1014,1011,curl,github.com,github.com,140.82.113.4,443
+ALLOW,1020,1020,git-remote-http,github.com,github.com,140.82.113.4,443
+ALLOW,1030,1030,node,registry.npmjs.org,registry.npmjs.org,104.16.0.35,443
+ALLOW,1031,1031,node,2606:4700::6810:23,,2606:4700::6810:23,443
+DENY(not-in-policy),1040,1040,curl,telemetry.example.com,telemetry.example.com,203.0.113.7,443
+DENY(not-in-policy),1041,1040,curl,telemetry.example.com,telemetry.example.com,203.0.113.7,443
+DENY(no-domain),1050,1050,python3,198.51.100.9,,198.51.100.9,8443
+SKIP(loopback),1060,1060,node,127.0.0.1,,127.0.0.1,3000

@@ -1,0 +1,2 @@
+::notice title=field-cage%3A denied outbound connection::denied evil|<img src=x>.example:443 (DENY(not-in-policy), 1 attempt(s), process: a|b <s>)
+::notice title=field-cage%3A denied outbound connection::denied x::warning::pwn.example:443 (DENY(not-in-policy), 1 attempt(s), process: ::set-output)

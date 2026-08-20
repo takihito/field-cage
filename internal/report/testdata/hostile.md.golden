@@ -1,0 +1,36 @@
+## field-cage report
+
+**mode:** `audit (no policy)` &middot; **events:** 3
+
+| verdict | count |
+| --- | --: |
+| `ALLOW` | 1 |
+| `DENY(not-in-policy)` | 2 |
+
+### Denied destinations (2)
+
+| destination | ip | port | count | processes |
+| --- | --- | --: | --: | --- |
+| `evil\|\<img src=x\>.example` | `203.0.113.9` | 443 | 1 | `a\|b \<s\>` |
+| `x::warning::pwn.example` | `203.0.113.10` | 443 | 1 | `::set-output` |
+
+<details>
+<summary>Allowed destinations (1)</summary>
+
+| destination | ip | port | count | processes |
+| --- | --- | --: | --: | --- |
+| `100%.example` | `203.0.113.11` | 80 | 1 | `sh` |
+
+</details>
+
+<details>
+<summary>Suggested allowlist (review before use)</summary>
+
+```yaml
+allowlist:
+  - '100%.example'
+  - 'evil|<img src=x>.example'
+  - 'x::warning::pwn.example'
+```
+
+</details>

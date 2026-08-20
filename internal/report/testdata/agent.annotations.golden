@@ -1,0 +1,2 @@
+::warning title=field-cage%3A denied outbound connection::denied telemetry.example.com:443 (DENY(not-in-policy), 2 attempt(s), process: curl)
+::warning title=field-cage%3A denied outbound connection::denied 198.51.100.9:8443 (DENY(no-domain), 1 attempt(s), process: python3)

@@ -38,6 +38,10 @@ jobs:
         run: |
           curl -4 -s https://github.com     -o /dev/null
           curl -4 -s https://api.github.com -o /dev/null
+          # Not on the policy allowlist above: exercises a DENY(not-in-policy)
+          # verdict for the report step below. audit mode never blocks, so this
+          # request still succeeds.
+          curl -4 -s https://example.com -o /dev/null
           sleep 1
 
       - name: Show field-cage log
@@ -51,5 +55,29 @@ jobs:
         run: |
           if ! grep -q "dst=" /tmp/field-cage.log 2>/dev/null; then
             echo "ERROR: no connection events captured via the action" >&2
+            exit 1
+          fi
+
+      - name: Render field-cage report
+        id: report
+        if: always()
+        uses: ./report
+        with:
+          version: ${{ inputs.version }}
+          log-file: /tmp/field-cage.log
+          fail-on-deny: false # audit mode: a denial here is expected and informational
+
+      - name: Verify report outputs
+        if: always()
+        env:
+          DENIED_COUNT: ${{ steps.report.outputs.denied-count }}
+          ALLOWED_COUNT: ${{ steps.report.outputs.allowed-count }}
+          SUGGESTED_ALLOWLIST: ${{ steps.report.outputs.suggested-allowlist }}
+        run: |
+          echo "denied-count=${DENIED_COUNT}"
+          echo "allowed-count=${ALLOWED_COUNT}"
+          echo "suggested-allowlist=${SUGGESTED_ALLOWLIST}"
+          if [ "${DENIED_COUNT}" -lt 1 ]; then
+            echo "ERROR: expected at least one denied destination (example.com is not on the allowlist)" >&2
             exit 1
           fi

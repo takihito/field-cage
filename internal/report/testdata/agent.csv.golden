@@ -1,0 +1,8 @@
+verdict,destination,domain,ip,port,count,processes
+DENY(not-in-policy),telemetry.example.com,telemetry.example.com,203.0.113.7,443,2,curl
+DENY(no-domain),198.51.100.9,,198.51.100.9,8443,1,python3
+ALLOW,github.com,github.com,140.82.113.4,443,5,curl;git-remote-http
+ALLOW,2606:4700::6810:23,,2606:4700::6810:23,443,1,node
+ALLOW,registry.npmjs.org,registry.npmjs.org,104.16.0.35,443,1,node
+SKIP(dns),10.0.0.2,,10.0.0.2,53,3,curl
+SKIP(loopback),127.0.0.1,,127.0.0.1,3000,1,node

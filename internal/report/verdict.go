@@ -6,6 +6,7 @@ package report
 import (
 	"fmt"
 	"net"
+	"strings"
 )
 
 // Verdict labels the policy decision for a captured connection event.
@@ -103,3 +104,15 @@ func (l Line) String() string {
 	return fmt.Sprintf("verdict=%-20s pid=%-6d tgid=%-6d comm=%-16s dst=%s:%d",
 		l.Verdict, l.PID, l.TGID, l.Comm, l.Dst, l.DPort)
 }
+
+// IsDeny reports whether the verdict denies the connection. It covers every
+// DENY(...) variant so callers do not have to enumerate the reasons.
+func (v Verdict) IsDeny() bool { return strings.HasPrefix(string(v), "DENY") }
+
+// IsSkip reports whether the connection was exempt from enforcement
+// (DNS to a trusted resolver, or loopback) rather than judged by the policy.
+func (v Verdict) IsSkip() bool { return strings.HasPrefix(string(v), "SKIP") }
+
+// IsAllow reports whether the connection was permitted by the policy.
+// Skipped connections are not counted as allowed: they were never evaluated.
+func (v Verdict) IsAllow() bool { return v == VerdictAllow }

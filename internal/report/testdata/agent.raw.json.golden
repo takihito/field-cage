@@ -1,0 +1,14 @@
+{"verdict":"SKIP(dns)","pid":1010,"tgid":1010,"comm":"curl","destination":"10.0.0.2","domain":"","ip":"10.0.0.2","port":53}
+{"verdict":"SKIP(dns)","pid":1011,"tgid":1010,"comm":"curl","destination":"10.0.0.2","domain":"","ip":"10.0.0.2","port":53}
+{"verdict":"SKIP(dns)","pid":1012,"tgid":1010,"comm":"curl","destination":"10.0.0.2","domain":"","ip":"10.0.0.2","port":53}
+{"verdict":"ALLOW","pid":1011,"tgid":1011,"comm":"curl","destination":"github.com","domain":"github.com","ip":"140.82.113.4","port":443}
+{"verdict":"ALLOW","pid":1012,"tgid":1011,"comm":"curl","destination":"github.com","domain":"github.com","ip":"140.82.113.4","port":443}
+{"verdict":"ALLOW","pid":1013,"tgid":1011,"comm":"curl","destination":"github.com","domain":"github.com","ip":"140.82.113.4","port":443}
+{"verdict":"ALLOW","pid":1014,"tgid":1011,"comm":"curl","destination":"github.com","domain":"github.com","ip":"140.82.113.4","port":443}
+{"verdict":"ALLOW","pid":1020,"tgid":1020,"comm":"git-remote-http","destination":"github.com","domain":"github.com","ip":"140.82.113.4","port":443}
+{"verdict":"ALLOW","pid":1030,"tgid":1030,"comm":"node","destination":"registry.npmjs.org","domain":"registry.npmjs.org","ip":"104.16.0.35","port":443}
+{"verdict":"ALLOW","pid":1031,"tgid":1031,"comm":"node","destination":"2606:4700::6810:23","domain":"","ip":"2606:4700::6810:23","port":443}
+{"verdict":"DENY(not-in-policy)","pid":1040,"tgid":1040,"comm":"curl","destination":"telemetry.example.com","domain":"telemetry.example.com","ip":"203.0.113.7","port":443}
+{"verdict":"DENY(not-in-policy)","pid":1041,"tgid":1040,"comm":"curl","destination":"telemetry.example.com","domain":"telemetry.example.com","ip":"203.0.113.7","port":443}
+{"verdict":"DENY(no-domain)","pid":1050,"tgid":1050,"comm":"python3","destination":"198.51.100.9","domain":"","ip":"198.51.100.9","port":8443}
+{"verdict":"SKIP(loopback)","pid":1060,"tgid":1060,"comm":"node","destination":"127.0.0.1","domain":"","ip":"127.0.0.1","port":3000}

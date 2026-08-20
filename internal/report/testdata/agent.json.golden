@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "mode": "block",
+  "total_events": 14,
+  "malformed_lines": 1,
+  "by_verdict": {
+    "ALLOW": 7,
+    "DENY(no-domain)": 1,
+    "DENY(not-in-policy)": 2,
+    "SKIP(dns)": 3,
+    "SKIP(loopback)": 1
+  },
+  "destinations": [
+    {
+      "verdict": "DENY(not-in-policy)",
+      "destination": "telemetry.example.com",
+      "domain": "telemetry.example.com",
+      "ip": "203.0.113.7",
+      "port": 443,
+      "count": 2,
+      "processes": [
+        "curl"
+      ],
+      "more_processes": 0
+    },
+    {
+      "verdict": "DENY(no-domain)",
+      "destination": "198.51.100.9",
+      "domain": "",
+      "ip": "198.51.100.9",
+      "port": 8443,
+      "count": 1,
+      "processes": [
+        "python3"
+      ],
+      "more_processes": 0
+    },
+    {
+      "verdict": "ALLOW",
+      "destination": "github.com",
+      "domain": "github.com",
+      "ip": "140.82.113.4",
+      "port": 443,
+      "count": 5,
+      "processes": [
+        "curl",
+        "git-remote-http"
+      ],
+      "more_processes": 0
+    },
+    {
+      "verdict": "ALLOW",
+      "destination": "2606:4700::6810:23",
+      "domain": "",
+      "ip": "2606:4700::6810:23",
+      "port": 443,
+      "count": 1,
+      "processes": [
+        "node"
+      ],
+      "more_processes": 0
+    },
+    {
+      "verdict": "ALLOW",
+      "destination": "registry.npmjs.org",
+      "domain": "registry.npmjs.org",
+      "ip": "104.16.0.35",
+      "port": 443,
+      "count": 1,
+      "processes": [
+        "node"
+      ],
+      "more_processes": 0
+    },
+    {
+      "verdict": "SKIP(dns)",
+      "destination": "10.0.0.2",
+      "domain": "",
+      "ip": "10.0.0.2",
+      "port": 53,
+      "count": 3,
+      "processes": [
+        "curl"
+      ],
+      "more_processes": 0
+    },
+    {
+      "verdict": "SKIP(loopback)",
+      "destination": "127.0.0.1",
+      "domain": "",
+      "ip": "127.0.0.1",
+      "port": 3000,
+      "count": 1,
+      "processes": [
+        "node"
+      ],
+      "more_processes": 0
+    }
+  ],
+  "omitted_destinations": 0,
+  "suggested_allowlist": [
+    "198.51.100.9",
+    "2606:4700::6810:23",
+    "github.com",
+    "registry.npmjs.org",
+    "telemetry.example.com"
+  ]
+}

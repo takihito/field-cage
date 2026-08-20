@@ -37,6 +37,18 @@ func main() {
 	// Diagnostics go to stderr via slog; the per-connection verdict lines are
 	// written separately to stdout in a stable format (see report.Line).
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
+
+	// `report` is a subcommand, so it is dispatched before the top-level flags
+	// are parsed. It only reads a log file and writes to stdout; it does not
+	// touch eBPF and needs no privileges.
+	if len(os.Args) > 1 && os.Args[1] == "report" {
+		if err := runReport(os.Args[2:], os.Stdin, os.Stdout, os.Getenv); err != nil {
+			slog.Error("report failed", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	flag.Parse()
 
 	if *showVersion {

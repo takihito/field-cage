@@ -1,0 +1,4 @@
+verdict,destination,domain,ip,port,count,processes
+DENY(not-in-policy),evil|<img src=x>.example,evil|<img src=x>.example,203.0.113.9,443,1,a|b <s>
+DENY(not-in-policy),x::warning::pwn.example,x::warning::pwn.example,203.0.113.10,443,1,::set-output
+ALLOW,100%.example,100%.example,203.0.113.11,80,1,sh

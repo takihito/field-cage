@@ -1,0 +1,53 @@
+## field-cage report
+
+**mode:** `block` &middot; **events:** 14 &middot; **unparsable log lines:** 1
+
+| verdict | count |
+| --- | --: |
+| `ALLOW` | 7 |
+| `DENY(not-in-policy)` | 2 |
+| `DENY(no-domain)` | 1 |
+| `SKIP(dns)` | 3 |
+| `SKIP(loopback)` | 1 |
+
+### Denied destinations (2)
+
+| destination | ip | port | count | processes |
+| --- | --- | --: | --: | --- |
+| `telemetry.example.com` | `203.0.113.7` | 443 | 2 | `curl` |
+| `198.51.100.9` | &mdash; | 8443 | 1 | `python3` |
+
+<details>
+<summary>Allowed destinations (3)</summary>
+
+| destination | ip | port | count | processes |
+| --- | --- | --: | --: | --- |
+| `github.com` | `140.82.113.4` | 443 | 5 | `curl,git-remote-http` |
+| `2606:4700::6810:23` | &mdash; | 443 | 1 | `node` |
+| `registry.npmjs.org` | `104.16.0.35` | 443 | 1 | `node` |
+
+</details>
+
+<details>
+<summary>Skipped: DNS and loopback (2)</summary>
+
+| destination | ip | port | count | processes |
+| --- | --- | --: | --: | --- |
+| `10.0.0.2` | &mdash; | 53 | 3 | `curl` |
+| `127.0.0.1` | &mdash; | 3000 | 1 | `node` |
+
+</details>
+
+<details>
+<summary>Suggested allowlist (review before use)</summary>
+
+```yaml
+allowlist:
+  - '198.51.100.9'
+  - '2606:4700::6810:23'
+  - 'github.com'
+  - 'registry.npmjs.org'
+  - 'telemetry.example.com'
+```
+
+</details>
