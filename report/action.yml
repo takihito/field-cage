@@ -28,6 +28,10 @@ inputs:
     description: "Upload the raw agent log as a workflow artifact."
     required: false
     default: "false"
+  dump-log:
+    description: "Copy the raw agent log into this step's own job log, inside a collapsible ::group::. Off by default: prefer the summarized report and opt into upload-log or this for full detail."
+    required: false
+    default: "false"
   top:
     description: "Maximum destinations shown per table (0 for unlimited)."
     required: false
@@ -43,6 +47,9 @@ outputs:
   suggested-allowlist:
     description: "JSON array of destinations observed in the log, excluding DNS/loopback skips. Review before using as a policy."
     value: ${{ steps.render.outputs.suggested-allowlist }}
+  log-file:
+    description: "The log file path this action actually rendered (resolved from log-file, then FC_LOG, then the default)."
+    value: ${{ steps.render.outputs.log-file }}
 
 runs:
   using: composite
@@ -100,6 +107,7 @@ runs:
         FC_SUMMARY: ${{ inputs.summary }}
         FC_ANNOTATIONS: ${{ inputs.annotations }}
         FC_FAIL_ON_DENY: ${{ inputs.fail-on-deny }}
+        FC_DUMP_LOG: ${{ inputs.dump-log }}
         FC_TOP: ${{ inputs.top }}
       run: |
         set -euo pipefail
@@ -110,13 +118,22 @@ runs:
           echo "::error::Did the main takihito/field-cage step run earlier in this job, and does log-file match its log-file input?" >&2
           exit 1
         fi
+        # Resolved once here so the Upload step below archives the same file
+        # this step actually rendered, rather than re-deriving (and
+        # potentially mismatching) the default path independently.
+        echo "log-file=${log_file}" >> "$GITHUB_OUTPUT"
 
         mode_flag=()
         if [ -n "${FC_MODE:-}" ]; then mode_flag=(--mode "${FC_MODE}"); fi
 
-        echo "::group::field-cage raw log"
-        cat "${log_file}"
-        echo "::endgroup::"
+        # Off by default: the summary and annotations below already surface
+        # what matters, and copying the full raw log into the ordinary job
+        # log duplicates it in a less structured, more broadly visible place.
+        if [ "${FC_DUMP_LOG}" = "true" ]; then
+          echo "::group::field-cage raw log"
+          cat "${log_file}"
+          echo "::endgroup::"
+        fi
 
         if [ "${FC_SUMMARY}" = "true" ]; then
           "${FC_BIN}" report --log "${log_file}" --format markdown --top "${FC_TOP}" "${mode_flag[@]}" >> "$GITHUB_STEP_SUMMARY"
@@ -147,5 +164,9 @@ runs:
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: field-cage-log
-        path: ${{ inputs.log-file != '' && inputs.log-file || '/tmp/field-cage.log' }}
+        # Use the same path the Render step actually read (log-file input,
+        # else FC_LOG from the main action, else the default), not a
+        # re-derivation that ignores FC_LOG and silently archives the wrong
+        # file when a custom log-file was used upstream.
+        path: ${{ steps.render.outputs.log-file }}
         if-no-files-found: warn

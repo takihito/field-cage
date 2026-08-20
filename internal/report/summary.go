@@ -163,8 +163,11 @@ func (c *Collector) Add(ev Event) error {
 	agg.count++
 	if ev.Comm != "" {
 		if _, dup := agg.procSeen[ev.Comm]; !dup {
+			// Mark seen regardless of whether the cap was reached: procsMore
+			// counts *distinct* dropped names, so a name already counted as
+			// overflow must not be recounted on its later occurrences.
+			agg.procSeen[ev.Comm] = struct{}{}
 			if len(agg.procs) < maxProcessesPerDest {
-				agg.procSeen[ev.Comm] = struct{}{}
 				agg.procs = append(agg.procs, ev.Comm)
 			} else {
 				agg.procsMore++

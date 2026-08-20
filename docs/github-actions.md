@@ -66,7 +66,7 @@ Add `takihito/field-cage/report` at the end of the job (with `if: always()`, sin
     fail-on-deny: false    # set true to fail the job on any DENY verdict (typically for block mode)
 ```
 
-It writes a table of denied/allowed/skipped destinations to `$GITHUB_STEP_SUMMARY`, emits one annotation per denied destination (`warning` in block mode, `notice` in audit mode, since audit mode never actually blocked anything), and exposes `denied-count`, `allowed-count`, and `suggested-allowlist` (a JSON array of destinations observed, for use as a starting point for a policy — review before adopting it) as step outputs. See [`report/action.yml`](https://github.com/takihito/field-cage/blob/main/report/action.yml) for every input.
+It writes a table of denied/allowed/skipped destinations to `$GITHUB_STEP_SUMMARY`, emits one annotation per denied destination (`warning` in block mode, `notice` in audit mode, since audit mode never actually blocked anything), and exposes `denied-count`, `allowed-count`, and `suggested-allowlist` (a JSON array of destinations observed, for use as a starting point for a policy — review before adopting it) as step outputs. The full raw log is not copied into the job log by default (set `dump-log: true` to opt in) or uploaded as an artifact (set `upload-log: true`) — the summary above is preferred. See [`report/action.yml`](https://github.com/takihito/field-cage/blob/main/report/action.yml) for every input.
 
 ## CLI: text, JSON, or CSV
 

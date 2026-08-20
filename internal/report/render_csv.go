@@ -35,12 +35,12 @@ func (r csvRenderer) Render(w io.Writer, s *Summary) error {
 		}
 		row := []string{
 			string(d.Verdict),
-			d.Destination(),
-			d.Domain,
+			csvFormulaGuard(d.Destination()),
+			csvFormulaGuard(d.Domain),
 			d.IP,
 			strconv.FormatUint(uint64(d.Port), 10),
 			strconv.Itoa(d.Count),
-			procs,
+			csvFormulaGuard(procs),
 		}
 		if err := cw.Write(row); err != nil {
 			return err
@@ -48,6 +48,24 @@ func (r csvRenderer) Render(w io.Writer, s *Summary) error {
 	}
 	cw.Flush()
 	return cw.Error()
+}
+
+// csvFormulaGuard prefixes a cell with "'" when it starts with a character
+// that a spreadsheet application (Excel, Google Sheets, LibreOffice) would
+// interpret as the start of a formula. encoding/csv only escapes CSV syntax
+// (separators and quotes), not this; domain names and process names come
+// from observed network traffic and are therefore attacker-influenced,
+// letting a crafted destination execute a formula when a reviewer opens the
+// exported CSV. See OWASP "CSV Injection".
+func csvFormulaGuard(s string) string {
+	if s == "" {
+		return s
+	}
+	switch s[0] {
+	case '=', '+', '-', '@', '\t', '\r':
+		return "'" + s
+	}
+	return s
 }
 
 // rawCSV writes one row per event.
@@ -69,9 +87,9 @@ func (r *rawCSV) WriteEvent(ev Event) error {
 		string(ev.Verdict),
 		strconv.FormatUint(uint64(ev.PID), 10),
 		strconv.FormatUint(uint64(ev.TGID), 10),
-		ev.Comm,
-		ev.Destination(),
-		ev.Domain,
+		csvFormulaGuard(ev.Comm),
+		csvFormulaGuard(ev.Destination()),
+		csvFormulaGuard(ev.Domain),
 		ev.IPString(),
 		strconv.FormatUint(uint64(ev.Port), 10),
 	})
