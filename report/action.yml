@@ -113,6 +113,18 @@ runs:
         set -euo pipefail
 
         log_file="${FC_LOG_INPUT:-${FC_LOG:-/tmp/field-cage.log}}"
+        # log_file is about to be written as a single-line "key=value" record
+        # to GITHUB_OUTPUT below. It legitimately never contains a newline;
+        # reject one rather than let it start a second, attacker-chosen
+        # output record (this sub-action can run standalone, so log_file may
+        # come directly from a caller-supplied log-file input, not only from
+        # the trusted FC_LOG set by the main action).
+        case "${log_file}" in
+          *$'\n'*)
+            echo "::error::field-cage report: 'log-file' must not contain a newline." >&2
+            exit 1
+            ;;
+        esac
         if [ ! -f "${log_file}" ]; then
           echo "::error::field-cage report: log file not found: ${log_file}" >&2
           echo "::error::Did the main takihito/field-cage step run earlier in this job, and does log-file match its log-file input?" >&2
@@ -121,7 +133,12 @@ runs:
         # Resolved once here so the Upload step below archives the same file
         # this step actually rendered, rather than re-deriving (and
         # potentially mismatching) the default path independently.
-        echo "log-file=${log_file}" >> "$GITHUB_OUTPUT"
+        printf 'log-file=%s\n' "${log_file}" >> "$GITHUB_OUTPUT"
+
+        command -v jq >/dev/null 2>&1 || {
+          echo "::error::jq is required to compute this action's outputs but was not found on PATH. It is preinstalled on GitHub-hosted runners; on a self-hosted or minimal runner, install it before this step." >&2
+          exit 1
+        }
 
         mode_flag=()
         if [ -n "${FC_MODE:-}" ]; then mode_flag=(--mode "${FC_MODE}"); fi
@@ -131,7 +148,7 @@ runs:
         # log duplicates it in a less structured, more broadly visible place.
         if [ "${FC_DUMP_LOG}" = "true" ]; then
           echo "::group::field-cage raw log"
-          cat "${log_file}"
+          cat -- "${log_file}"
           echo "::endgroup::"
         fi
 
