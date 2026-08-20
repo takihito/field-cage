@@ -76,6 +76,14 @@ jobs:
           LINES=$(grep -c "dst=" /tmp/fc-log.txt 2>/dev/null || echo 0)
           echo "Total connection events: ${LINES}"
 
+      - name: Render connection report
+        if: always()
+        run: |
+          if [ -f /tmp/fc-log.txt ]; then
+            /tmp/field-cage report --log /tmp/fc-log.txt --format markdown >> "$GITHUB_STEP_SUMMARY"
+            /tmp/field-cage report --log /tmp/fc-log.txt --format annotations
+          fi
+
       - name: Verify at least one connection was captured
         run: |
           if ! grep -q "dst=" /tmp/fc-log.txt 2>/dev/null; then
