@@ -1,0 +1,18 @@
+time=2026-08-20T12:00:00.000Z level=INFO msg="watching outbound connections (Ctrl+C to stop)" version=v0.1.0 mode=block
+time=2026-08-20T12:00:00.001Z level=INFO msg="block mode active (default-deny; loopback always allowed; IPv4+IPv6)" dns="restricted to trusted resolvers"
+verdict=SKIP(dns)            pid=1010   tgid=1010   comm=curl             dst=10.0.0.2:53
+verdict=SKIP(dns)            pid=1011   tgid=1010   comm=curl             dst=10.0.0.2:53
+verdict=SKIP(dns)            pid=1012   tgid=1010   comm=curl             dst=10.0.0.2:53
+verdict=ALLOW                pid=1011   tgid=1011   comm=curl             dst=github.com (140.82.113.4):443
+verdict=ALLOW                pid=1012   tgid=1011   comm=curl             dst=github.com (140.82.113.4):443
+verdict=ALLOW                pid=1013   tgid=1011   comm=curl             dst=github.com (140.82.113.4):443
+verdict=ALLOW                pid=1014   tgid=1011   comm=curl             dst=github.com (140.82.113.4):443
+verdict=ALLOW                pid=1020   tgid=1020   comm=git-remote-http  dst=github.com (140.82.113.4):443
+verdict=ALLOW                pid=1030   tgid=1030   comm=node             dst=registry.npmjs.org (104.16.0.35):443
+verdict=ALLOW                pid=1031   tgid=1031   comm=node             dst=2606:4700::6810:23:443
+verdict=DENY(not-in-policy)  pid=1040   tgid=1040   comm=curl             dst=telemetry.example.com (203.0.113.7):443
+verdict=DENY(not-in-policy)  pid=1041   tgid=1040   comm=curl             dst=telemetry.example.com (203.0.113.7):443
+verdict=DENY(no-domain)      pid=1050   tgid=1050   comm=python3          dst=198.51.100.9:8443
+verdict=SKIP(loopback)       pid=1060   tgid=1060   comm=node             dst=127.0.0.1:3000
+verdict=ALLOW pid=x tgid=1 comm=broken dst=1.2.3.4:80
+time=2026-08-20T12:01:00.000Z level=INFO msg="shutting down"

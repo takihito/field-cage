@@ -1,0 +1,24 @@
+field-cage report  mode=block  events=14  malformed-lines=1
+
+VERDICT              COUNT
+ALLOW                7
+DENY(not-in-policy)  2
+DENY(no-domain)      1
+SKIP(dns)            3
+SKIP(loopback)       1
+
+COUNT  VERDICT              DESTINATION            IP            PORT  PROCESSES
+2      DENY(not-in-policy)  telemetry.example.com  203.0.113.7   443   curl
+1      DENY(no-domain)      198.51.100.9           -             8443  python3
+5      ALLOW                github.com             140.82.113.4  443   curl,git-remote-http
+1      ALLOW                2606:4700::6810:23     -             443   node
+1      ALLOW                registry.npmjs.org     104.16.0.35   443   node
+3      SKIP(dns)            10.0.0.2               -             53    curl
+1      SKIP(loopback)       127.0.0.1              -             3000  node
+
+SUGGESTED ALLOWLIST (review before use)
+  198.51.100.9
+  2606:4700::6810:23
+  github.com
+  registry.npmjs.org
+  telemetry.example.com

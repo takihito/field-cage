@@ -142,6 +142,10 @@ Composite Action でランナー上に field-cage を起動できます。指定
   呼び出し側で行います。
 - サンプルポリシーは
   [`.github/field-cage-policy.example.yml`](.github/field-cage-policy.example.yml) を参照。
+- ジョブの末尾に `takihito/field-cage/report@v0.1.0`（`if: always()`）を追加すると
+  ジョブサマリと拒否アノテーションを表示できます。ローカルでは
+  `field-cage report --log /tmp/field-cage.log --format text|json|csv` を直接実行できます。
+  詳細は[GitHub Actions ドキュメント](https://takihito.github.io/field-cage/ja/github-actions/)を参照。
 
 ### リリース
 

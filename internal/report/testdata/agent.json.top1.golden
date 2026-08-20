@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "mode": "block",
+  "total_events": 14,
+  "malformed_lines": 1,
+  "by_verdict": {
+    "ALLOW": 7,
+    "DENY(no-domain)": 1,
+    "DENY(not-in-policy)": 2,
+    "SKIP(dns)": 3,
+    "SKIP(loopback)": 1
+  },
+  "destinations": [
+    {
+      "verdict": "DENY(not-in-policy)",
+      "destination": "telemetry.example.com",
+      "domain": "telemetry.example.com",
+      "ip": "203.0.113.7",
+      "port": 443,
+      "count": 2,
+      "processes": [
+        "curl"
+      ],
+      "more_processes": 0
+    }
+  ],
+  "omitted_destinations": 6,
+  "suggested_allowlist": [
+    "198.51.100.9",
+    "2606:4700::6810:23",
+    "github.com",
+    "registry.npmjs.org",
+    "telemetry.example.com"
+  ]
+}

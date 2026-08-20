@@ -38,13 +38,16 @@ Key goals:
 - **eBPF Loader** — loads compiled eBPF programs into the kernel using `cilium/ebpf`
 - **DNS Cache** — in-memory map resolving IP addresses to domain names from eBPF events
 - **Policy Engine** — matches live traffic against YAML allowlist (exact domain match only, case-insensitive)
-- **Reporter** — writes per-connection verdict lines to stdout in a stable format: `verdict=<V> pid=<P> tgid=<T> comm=<C> dst=<domain> (<ip>):<port>`. Verdict values: `ALLOW`, `DENY(no-domain)`, `DENY(not-in-policy)`, `SKIP(dns)`, `SKIP(loopback)`. Diagnostics go to stderr via `log/slog`; keep the stdout format stable — CI smoke tests grep it.
+- **Reporter** — writes per-connection verdict lines to stdout in a stable format: `verdict=<V> pid=<P> tgid=<T> comm=<C> dst=<domain> (<ip>):<port>`. Verdict values: `ALLOW`, `DENY(no-domain)`, `DENY(not-in-policy)`, `SKIP(dns)`, `SKIP(loopback)`. Diagnostics go to stderr via `log/slog`; keep the stdout format stable — CI smoke tests grep it, and `internal/report.ParseLine` parses it back (round-trip tested against `Line.String()`).
+- **`report` subcommand** (`field-cage report --log <file> --format text|json|csv|markdown|annotations`, `internal/report`) — aggregates a log (parsed by `ParseLine`/`ScanLog`) into per-destination counts and renders it. `auto` (default) picks `markdown` on a GitHub Actions runner and `text` otherwise. `--raw` skips aggregation and emits one row per event (`text`/`json`/`csv` only). All formats escape log-derived values (domain names, `comm`) against their own metacharacters (Markdown/HTML, GitHub workflow-command syntax) since both originate from observed network traffic. `csv` header order and the `json` `schema_version` are a public output contract — changing them is a breaking change.
 
 ### GitHub Action
 - Implemented as a Composite Action (`action.yml`), no TypeScript
 - Downloads `checksums.txt` from GitHub Releases via `curl` with a pinned version tag, then verifies it was signed by the release workflow with `cosign verify-blob` (using the `checksums.txt.bundle` asset) before trusting it
 - Downloads the binary and verifies it with `sha256sum -c` against the now-trusted checksum file
 - Runs the binary as `sudo nohup <binary> [--config ...] [--mode ...] > <log-file> 2>&1 &` in the background; the `allow` input is translated into a temporary policy file (mutually exclusive with `config`)
+- Exports `FC_BIN` and `FC_LOG` (and `FC_MODE` when explicitly overridden) via `GITHUB_ENV` so a later `report` sub-action step in the same job can reuse the verified binary and log path without repeating inputs
+- **`report/action.yml`** — a separate composite sub-action (composite actions can't run a `post:` step, so this is invoked explicitly with `if: always()` at the end of the job) that shells out to `field-cage report --format markdown` for the job summary and `--format annotations` for per-denial annotations, and exposes `denied-count`/`allowed-count`/`suggested-allowlist` as step outputs via `jq` over `--format json`
 
 ## Development Commands
 
@@ -95,3 +98,4 @@ Development milestones
 8. Policy UX hardening: CIDR/LPM-trie allowlist entries, strict unknown-key rejection, wildcard-entry rejection, `--version` flag ✅
 9. Supply-chain hardening: cosign keyless signing + SLSA Level 3 provenance on releases, tagpr-managed versioning, YAML-injection-safe quoting for the `allow` action input ✅
 10. Distribution: GitHub Pages documentation site and `curl | sh` install script (Linux only — no macOS/Windows build) ✅
+11. Report formatting: `report` subcommand (text/json/csv/markdown/annotations) plus a `report/action.yml` sub-action for job summaries, denial annotations, and allowlist suggestions ✅
