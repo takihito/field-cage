@@ -68,14 +68,16 @@ Composite Action でランナー上に field-cage を起動できます。指定
     fail-on-deny: false    # DENY が1件でもあればジョブを失敗させたい場合は true（主に block モード向け）
 ```
 
-`$GITHUB_STEP_SUMMARY` へ拒否/許可/スキップ宛先の表を書き込み、拒否された宛先ごとにアノテーションを1件発行します（block モードでは `warning`、audit モードでは実際には遮断していないため `notice`）。また `denied-count` / `allowed-count` / `suggested-allowlist`（観測された宛先の JSON 配列。ポリシー作成の出発点として使えるが、採用前にレビューすること）/ `log-file`（実際に解決・レンダリングしたログパス）をステップ出力として公開します。生ログ全文はジョブログへのコピー（既定オフ、`dump-log: true` で有効化）やアーティファクトへのアップロード（`upload-log: true`）を明示的に有効化しない限り出力されません — 上記のサマリを優先する設計です。レンダリング後にはエージェントの停止も行います（`stop-agent: false` で無効化可、詳細は後述の「エージェントの停止」参照）。全入力は [`report/action.yml`](https://github.com/takihito/field-cage/blob/main/report/action.yml) を参照してください。
+`$GITHUB_STEP_SUMMARY` へ拒否/許可/スキップ宛先の表を書き込み、拒否された宛先ごとにアノテーションを1件発行します（block モードでは `warning`、audit モードでは実際には遮断していないため `notice`）。また `denied-count` / `allowed-count` / `suggested-allowlist`（観測された宛先の JSON 配列。ポリシー作成の出発点として使えるが、採用前にレビューすること）/ `log-file`（実際に解決・レンダリングしたログパス）をステップ出力として公開します。生ログ全文はジョブログへのコピー（既定オフ、`dump-log: true` で有効化）やアーティファクトへのアップロード（`upload-log: true`）を明示的に有効化しない限り出力されません — 上記のサマリを優先する設計です。v0.1.0 の次のリリース以降では、レンダリング後にエージェントの停止も行います（`stop-agent: false` で無効化可、詳細は後述の「エージェントの停止」参照）。この動作を得るには `version` をそのリリース以降にピン留めしてください。全入力は [`report/action.yml`](https://github.com/takihito/field-cage/blob/main/report/action.yml) を参照してください。
 
 ## エージェントの停止
+
+> `stop/action.yml` および `report` の既定停止動作は v0.1.0 には含まれていません。`version` / `uses:` の参照先は v0.1.0 ではなく、これらを含む最初のリリースタグ（[Releases](https://github.com/takihito/field-cage/releases) を確認）にピン留めしてください。
 
 `takihito/field-cage/report` は既定でエージェントを停止するため、通常はこれを直接呼ぶ必要はありません。`report` を使わないジョブ、または後続ステップでエージェントを動かし続けたいために `stop-agent: false` を指定した場合は、ジョブの本当の末尾で `takihito/field-cage/stop` を `if: always()` 付きで呼んでください:
 
 ```yaml
-- uses: takihito/field-cage/stop@v0.1.0
+- uses: takihito/field-cage/stop@vX.Y.Z
   if: always()
 ```
 

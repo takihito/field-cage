@@ -68,14 +68,16 @@ Add `takihito/field-cage/report` at the end of the job (with `if: always()`, sin
     fail-on-deny: false    # set true to fail the job on any DENY verdict (typically for block mode)
 ```
 
-It writes a table of denied/allowed/skipped destinations to `$GITHUB_STEP_SUMMARY`, emits one annotation per denied destination (`warning` in block mode, `notice` in audit mode, since audit mode never actually blocked anything), and exposes `denied-count`, `allowed-count`, `suggested-allowlist` (a JSON array of destinations observed, for use as a starting point for a policy — review before adopting it), and `log-file` (the log path it actually resolved and rendered) as step outputs. The full raw log is not copied into the job log by default (set `dump-log: true` to opt in) or uploaded as an artifact (set `upload-log: true`) — the summary above is preferred. After rendering, it also stops the agent (`stop-agent: false` to opt out — see "Stop the agent" below). See [`report/action.yml`](https://github.com/takihito/field-cage/blob/main/report/action.yml) for every input.
+It writes a table of denied/allowed/skipped destinations to `$GITHUB_STEP_SUMMARY`, emits one annotation per denied destination (`warning` in block mode, `notice` in audit mode, since audit mode never actually blocked anything), and exposes `denied-count`, `allowed-count`, `suggested-allowlist` (a JSON array of destinations observed, for use as a starting point for a policy — review before adopting it), and `log-file` (the log path it actually resolved and rendered) as step outputs. The full raw log is not copied into the job log by default (set `dump-log: true` to opt in) or uploaded as an artifact (set `upload-log: true`) — the summary above is preferred. As of the first release after v0.1.0, it also stops the agent after rendering (`stop-agent: false` to opt out — see "Stop the agent" below); pin `version` to that release or later to get this behavior. See [`report/action.yml`](https://github.com/takihito/field-cage/blob/main/report/action.yml) for every input.
 
 ## Stop the agent
+
+> `stop/action.yml` and `report`'s default auto-stop behavior are not in v0.1.0 — pin `version`/the `uses:` ref to the first release tag that includes them (check [Releases](https://github.com/takihito/field-cage/releases)) rather than v0.1.0.
 
 `takihito/field-cage/report` stops the agent by default, so most jobs never need this directly. If a job doesn't use `report` (or sets `stop-agent: false` because a later step still needs the agent running), call `takihito/field-cage/stop` as the true last step, with `if: always()`:
 
 ```yaml
-- uses: takihito/field-cage/stop@v0.1.0
+- uses: takihito/field-cage/stop@vX.Y.Z
   if: always()
 ```
 
