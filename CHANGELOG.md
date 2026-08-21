@@ -2,6 +2,10 @@
 
 Release notes are maintained automatically by [tagpr](https://github.com/Songmu/tagpr).
 
+## [v0.1.1](https://github.com/takihito/field-cage/compare/v0.1.0...v0.1.1) - 2026-08-21
+
+- Auto-stop the agent to prevent block-mode jobs from hanging (Phase 1) by @takihito in https://github.com/takihito/field-cage/pull/95
+
 ## [v0.1.0](https://github.com/takihito/field-cage/compare/v0.0.8...v0.1.0) - 2026-08-21
 
 - chore: bump version to 0.1.0 by @takihito in https://github.com/takihito/field-cage/pull/76
