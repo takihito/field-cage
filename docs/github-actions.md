@@ -43,6 +43,7 @@ For complex or shared policies:
 - **Audit mode never blocks traffic** — it only logs outbound connections. This action requires a Linux runner (`ubuntu-*`, hosted or self-hosted) with passwordless `sudo` and eBPF support; on macOS/Windows runners, unsupported architectures, or restricted self-hosted Linux runners, the action fails to download or start the agent, which fails the job regardless of mode.
 - The agent runs in the background; **view its log in a later step**, e.g. `cat /tmp/field-cage.log` (path configurable via the `log-file` input), or render it with the `report` sub-action below, or upload it as an artifact. Composite actions cannot run an automatic post-job step, so log collection and shutdown are left to the caller.
 - See [`.github/field-cage-policy.example.yml`](https://github.com/takihito/field-cage/blob/main/.github/field-cage-policy.example.yml) in the repository for a sample policy.
+- **Monitoring window**: field-cage only observes traffic from after the agent starts. Any step earlier in the job (checking out other actions, installing dependencies, etc.) is outside its coverage and won't appear in its log or allowlist — even if a separate egress-monitoring tool (e.g. [Harden Runner](https://github.com/step-security/harden-runner) in audit mode) flags it, since that tool watches from job start. Place this action as early as possible in the job to minimize the gap.
 
 ## Report: a formatted job summary
 
