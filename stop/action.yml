@@ -20,6 +20,24 @@ runs:
           echo "::warning title=field-cage::No running agent found (FC_PID is not set) — nothing to stop." >&2
           exit 0
         fi
+
+        # FC_PID feeds straight into `sudo kill` below. Since this sub-action
+        # is designed to run standalone, FC_PID may not be the trusted value
+        # the main action's `$!` set — validate it is an ordinary positive
+        # PID before using it: kill gives 0, negative numbers, and option-like
+        # strings special meanings (e.g. `kill -TERM -1` signals every process
+        # the caller can signal, which under sudo means the whole runner).
+        case "${FC_PID}" in
+          ''|*[!0-9]*)
+            echo "::error title=field-cage::FC_PID (\"${FC_PID}\") is not a valid PID; refusing to run kill with it." >&2
+            exit 1
+            ;;
+        esac
+        if [ "${FC_PID}" -le 1 ]; then
+          echo "::error title=field-cage::FC_PID (${FC_PID}) is not a plausible agent PID; refusing to run kill with it." >&2
+          exit 1
+        fi
+
         if ! sudo kill -0 "${FC_PID}" 2>/dev/null; then
           echo "field-cage: agent (pid=${FC_PID}) is already stopped."
           exit 0
