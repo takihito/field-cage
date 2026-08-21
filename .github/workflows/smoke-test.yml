@@ -31,6 +31,13 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # NOTE: this job builds field-cage from source, so the steps below
+      # (apt-get, go install) fetch the tool's own build dependencies before
+      # its binary exists — field-cage cannot monitor the network calls that
+      # build it. A Harden Runner audit log on this job will show
+      # proxy.golang.org / apt mirror traffic that never appears in
+      # field-cage's own log; that's expected, not a detection gap. See the
+      # "Monitoring window" note in docs/github-actions.md.
       - name: Install eBPF build dependencies
         run: |
           sudo apt-get update -q
@@ -83,6 +90,7 @@ jobs:
             /tmp/field-cage report --log /tmp/fc-log.txt --format markdown >> "$GITHUB_STEP_SUMMARY"
             /tmp/field-cage report --log /tmp/fc-log.txt --format annotations
           fi
+          echo "::notice title=field-cage::This job builds field-cage from source, so it only monitors traffic from after the agent starts (the 'Start field-cage agent' step). Earlier build-dependency traffic (apt, go install) is outside its window and may still appear in a Harden Runner audit log — that is expected, not a detection gap."
 
       - name: Verify at least one connection was captured
         run: |

@@ -43,6 +43,7 @@ Composite Action でランナー上に field-cage を起動できます。指定
 - **audit モードは通信を遮断しません** — アウトバウンド接続を記録するだけです。ただしこの Action は Linux ランナー（`ubuntu-*`、ホスト型・セルフホスト問わず）で passwordless `sudo` と eBPF サポートが必要です。macOS/Windows ランナー、非対応アーキテクチャ、権限が制限されたセルフホスト Linux ランナーでは、モードに関わらずバイナリ取得やエージェント起動に失敗しジョブが失敗します。
 - エージェントはバックグラウンドで動くため、**ログは後続ステップで確認**してください。例: `cat /tmp/field-cage.log`（パスは `log-file` 入力で変更可）、後述の `report` サブアクションで整形表示、または artifact としてアップロード。Composite Action は後処理（post）ステップを持てないため、ログ回収と停止は呼び出し側で行います。
 - サンプルポリシーはリポジトリの [`.github/field-cage-policy.example.yml`](https://github.com/takihito/field-cage/blob/main/.github/field-cage-policy.example.yml) を参照してください。
+- **監視対象の時間窓**: field-cage はエージェント起動後の通信のみを観測します。ジョブ内でそれより前に実行されるステップ（他アクションの checkout、依存パッケージのインストール等）は監視対象外で、ログや allowlist には現れません。別の egress 監視ツール（例: audit モードの [Harden Runner](https://github.com/step-security/harden-runner)）はジョブ開始時点から監視するため、そちらでは検知されることがありますが、これは field-cage の検知漏れではありません。ギャップを最小化するには、このアクションをジョブのできるだけ早い段階に配置してください。
 
 ## レポート: 整形されたジョブサマリ
 
