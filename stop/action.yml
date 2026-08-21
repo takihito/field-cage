@@ -1,0 +1,83 @@
+name: "field-cage stop"
+description: "Stop the field-cage agent started by the main takihito/field-cage action."
+branding:
+  icon: "shield"
+  color: "blue"
+
+runs:
+  using: composite
+  steps:
+    - name: Stop field-cage agent
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        # This sub-action can run standalone (no main takihito/field-cage step
+        # in this job) or after the agent was already stopped by an earlier
+        # `report` step (stop-agent defaults to true there); both are no-ops,
+        # not errors.
+        if [ -z "${FC_PID:-}" ]; then
+          echo "::warning title=field-cage::No running agent found (FC_PID is not set) — nothing to stop." >&2
+          exit 0
+        fi
+
+        # FC_PID feeds straight into `sudo kill` below. Since this sub-action
+        # is designed to run standalone, FC_PID may not be the trusted value
+        # the main action's `$!` set — validate it is an ordinary positive
+        # PID before using it: kill gives 0, negative numbers, and option-like
+        # strings special meanings (e.g. `kill -TERM -1` signals every process
+        # the caller can signal, which under sudo means the whole runner).
+        case "${FC_PID}" in
+          ''|*[!0-9]*)
+            echo "::error title=field-cage::FC_PID (\"${FC_PID}\") is not a valid PID; refusing to run kill with it." >&2
+            exit 1
+            ;;
+        esac
+        if [ "${FC_PID}" -le 1 ]; then
+          echo "::error title=field-cage::FC_PID (${FC_PID}) is not a plausible agent PID; refusing to run kill with it." >&2
+          exit 1
+        fi
+
+        if ! sudo kill -0 "${FC_PID}" 2>/dev/null; then
+          echo "field-cage: agent (pid=${FC_PID}) is already stopped."
+          exit 0
+        fi
+
+        # In block mode, the agent enforces a cgroup-wide eBPF hook that also
+        # covers the runner's own process — including the connections it
+        # opens to report job status as the job wraps up. Composite actions
+        # have no automatic post-job step, so nothing stops the agent unless
+        # this step (or `report`'s default stop-agent behavior) runs; left
+        # running, it can end up blocking the runner's own traffic and make
+        # the job appear to hang rather than fail cleanly.
+        echo "field-cage: stopping agent (pid=${FC_PID})"
+        sudo kill -TERM "${FC_PID}" 2>/dev/null || true
+
+        # SIGTERM lets the agent close its eBPF links itself and log a clean
+        # shutdown line. The links are not pinned to bpffs, so even if this
+        # graceful path fails and SIGKILL below is needed instead, the kernel
+        # still detaches them (and lifts enforcement) once the process's file
+        # descriptors are torn down on exit — SIGKILL is a safety net, not a
+        # weaker fallback.
+        stopped=false
+        for _ in $(seq 1 10); do
+          if ! sudo kill -0 "${FC_PID}" 2>/dev/null; then
+            stopped=true
+            break
+          fi
+          sleep 1
+        done
+
+        if [ "${stopped}" = true ]; then
+          echo "field-cage: agent stopped."
+          exit 0
+        fi
+
+        echo "::warning title=field-cage::Agent (pid=${FC_PID}) did not stop within 10s of SIGTERM; sending SIGKILL." >&2
+        sudo kill -KILL "${FC_PID}" 2>/dev/null || true
+        sleep 1
+        if sudo kill -0 "${FC_PID}" 2>/dev/null; then
+          echo "::error title=field-cage::Failed to stop agent (pid=${FC_PID}) even after SIGKILL. In block mode, enforcement may still be active for the rest of this job." >&2
+          exit 1
+        fi
+        echo "field-cage: agent force-stopped."

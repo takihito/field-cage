@@ -44,6 +44,7 @@ For complex or shared policies:
 - The agent runs in the background; **view its log in a later step**, e.g. `cat /tmp/field-cage.log` (path configurable via the `log-file` input), or render it with the `report` sub-action below, or upload it as an artifact. Composite actions cannot run an automatic post-job step, so log collection and shutdown are left to the caller.
 - See [`.github/field-cage-policy.example.yml`](https://github.com/takihito/field-cage/blob/main/.github/field-cage-policy.example.yml) in the repository for a sample policy.
 - **Monitoring window**: field-cage only observes traffic from after the agent starts. Any step earlier in the job (checking out other actions, installing dependencies, etc.) is outside its coverage and won't appear in its log or allowlist — even if a separate egress-monitoring tool (e.g. [Harden Runner](https://github.com/step-security/harden-runner) in audit mode) flags it, since that tool watches from job start. Place this action as early as possible in the job to minimize the gap.
+- **In block mode, stop the agent before the job ends.** It enforces via a cgroup-wide eBPF hook that also covers the runner's own process, including the connections it opens to report job status as the job wraps up; a caller that never stops the agent can end up blocking that traffic too, making the job appear to hang instead of finishing. `takihito/field-cage/report` stops it by default after rendering (`stop-agent: false` to opt out); if you skip `report`, call `takihito/field-cage/stop` instead.
 
 ## Report: a formatted job summary
 
@@ -67,7 +68,20 @@ Add `takihito/field-cage/report` at the end of the job (with `if: always()`, sin
     fail-on-deny: false    # set true to fail the job on any DENY verdict (typically for block mode)
 ```
 
-It writes a table of denied/allowed/skipped destinations to `$GITHUB_STEP_SUMMARY`, emits one annotation per denied destination (`warning` in block mode, `notice` in audit mode, since audit mode never actually blocked anything), and exposes `denied-count`, `allowed-count`, `suggested-allowlist` (a JSON array of destinations observed, for use as a starting point for a policy — review before adopting it), and `log-file` (the log path it actually resolved and rendered) as step outputs. The full raw log is not copied into the job log by default (set `dump-log: true` to opt in) or uploaded as an artifact (set `upload-log: true`) — the summary above is preferred. See [`report/action.yml`](https://github.com/takihito/field-cage/blob/main/report/action.yml) for every input.
+It writes a table of denied/allowed/skipped destinations to `$GITHUB_STEP_SUMMARY`, emits one annotation per denied destination (`warning` in block mode, `notice` in audit mode, since audit mode never actually blocked anything), and exposes `denied-count`, `allowed-count`, `suggested-allowlist` (a JSON array of destinations observed, for use as a starting point for a policy — review before adopting it), and `log-file` (the log path it actually resolved and rendered) as step outputs. The full raw log is not copied into the job log by default (set `dump-log: true` to opt in) or uploaded as an artifact (set `upload-log: true`) — the summary above is preferred. As of the first release after v0.1.0, it also stops the agent after rendering (`stop-agent: false` to opt out — see "Stop the agent" below); pin `version` to that release or later to get this behavior. See [`report/action.yml`](https://github.com/takihito/field-cage/blob/main/report/action.yml) for every input.
+
+## Stop the agent
+
+> `stop/action.yml` and `report`'s default auto-stop behavior are not in v0.1.0 — pin `version`/the `uses:` ref to the first release tag that includes them (check [Releases](https://github.com/takihito/field-cage/releases)) rather than v0.1.0.
+
+`takihito/field-cage/report` stops the agent by default, so most jobs never need this directly. If a job doesn't use `report` (or sets `stop-agent: false` because a later step still needs the agent running), call `takihito/field-cage/stop` as the true last step, with `if: always()`:
+
+```yaml
+- uses: takihito/field-cage/stop@vX.Y.Z
+  if: always()
+```
+
+It sends the agent `SIGTERM`, waits briefly, and escalates to `SIGKILL` if needed. This matters most in block mode: the agent enforces via a cgroup-wide eBPF hook that also covers the runner's own process, so an agent left running when the job wraps up can end up blocking the runner's own status-reporting traffic — which looks like a hung job rather than a clean failure.
 
 ## CLI: text, JSON, or CSV
 

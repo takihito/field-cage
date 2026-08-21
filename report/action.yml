@@ -36,6 +36,10 @@ inputs:
     description: "Maximum destinations shown per table (0 for unlimited)."
     required: false
     default: "50"
+  stop-agent:
+    description: "Stop the field-cage agent (FC_PID) after rendering. Composite actions have no automatic post-job step, so this is the last reliable point in the job to stop it; leaving it running in block mode risks it blocking the runner's own traffic as the job wraps up. Set to false if a later step still needs the agent running (call the standalone `stop` sub-action at the true end of the job instead)."
+    required: false
+    default: "true"
 
 outputs:
   denied-count:
@@ -187,3 +191,69 @@ runs:
         # file when a custom log-file was used upstream.
         path: ${{ steps.render.outputs.log-file }}
         if-no-files-found: warn
+
+    # Runs even when the Render step above failed (e.g. fail-on-deny): a
+    # denial is exactly the case most likely to leave a block-mode agent
+    # running, and it must not skip being stopped just because this action
+    # is also reporting failure. The stop logic itself is intentionally
+    # duplicated from stop/action.yml rather than invoked via a nested
+    # `uses:` with an interpolated version, to avoid depending on expression
+    # support in `uses:` that this project hasn't verified.
+    - name: Stop field-cage agent
+      if: ${{ always() && inputs.stop-agent == 'true' }}
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        if [ -z "${FC_PID:-}" ]; then
+          echo "::warning title=field-cage::No running agent found (FC_PID is not set) — nothing to stop." >&2
+          exit 0
+        fi
+
+        # FC_PID feeds straight into `sudo kill` below. Since this sub-action
+        # is designed to run standalone, FC_PID may not be the trusted value
+        # the main action's `$!` set — validate it is an ordinary positive
+        # PID before using it: kill gives 0, negative numbers, and option-like
+        # strings special meanings (e.g. `kill -TERM -1` signals every process
+        # the caller can signal, which under sudo means the whole runner).
+        case "${FC_PID}" in
+          ''|*[!0-9]*)
+            echo "::error title=field-cage::FC_PID (\"${FC_PID}\") is not a valid PID; refusing to run kill with it." >&2
+            exit 1
+            ;;
+        esac
+        if [ "${FC_PID}" -le 1 ]; then
+          echo "::error title=field-cage::FC_PID (${FC_PID}) is not a plausible agent PID; refusing to run kill with it." >&2
+          exit 1
+        fi
+
+        if ! sudo kill -0 "${FC_PID}" 2>/dev/null; then
+          echo "field-cage: agent (pid=${FC_PID}) is already stopped."
+          exit 0
+        fi
+
+        echo "field-cage: stopping agent (pid=${FC_PID})"
+        sudo kill -TERM "${FC_PID}" 2>/dev/null || true
+
+        stopped=false
+        for _ in $(seq 1 10); do
+          if ! sudo kill -0 "${FC_PID}" 2>/dev/null; then
+            stopped=true
+            break
+          fi
+          sleep 1
+        done
+
+        if [ "${stopped}" = true ]; then
+          echo "field-cage: agent stopped."
+          exit 0
+        fi
+
+        echo "::warning title=field-cage::Agent (pid=${FC_PID}) did not stop within 10s of SIGTERM; sending SIGKILL." >&2
+        sudo kill -KILL "${FC_PID}" 2>/dev/null || true
+        sleep 1
+        if sudo kill -0 "${FC_PID}" 2>/dev/null; then
+          echo "::error title=field-cage::Failed to stop agent (pid=${FC_PID}) even after SIGKILL. In block mode, enforcement may still be active for the rest of this job." >&2
+          exit 1
+        fi
+        echo "field-cage: agent force-stopped."

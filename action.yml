@@ -134,12 +134,21 @@ runs:
         sudo nohup "${FC_BIN}" "${args[@]}" > "${FC_LOG}" 2>&1 &
         FC_PID=$!
 
-        # Exposed so a later `takihito/field-cage/report` step can find the log
-        # and the binary without the caller repeating the log-file input.
-        # FC_MODE is only exported when explicitly overridden here: when it is
-        # left to the policy file (or defaulted to audit), the report step
-        # recovers the effective mode from the agent's own startup log line.
+        # Exposed so later `takihito/field-cage/report` and
+        # `takihito/field-cage/stop` steps can find the log, the binary, and
+        # the running agent without the caller repeating inputs. FC_PID in
+        # particular matters in block mode: the agent enforces via a cgroup
+        # eBPF hook that also covers the runner's own process, including the
+        # job status/log-streaming connections it opens as the job wraps up.
+        # Composite actions have no automatic post-job step, so nothing stops
+        # the agent unless a caller-visible step does — see the `stop`
+        # sub-action (also run automatically by `report` unless
+        # `stop-agent: false` is set). FC_MODE is only exported when
+        # explicitly overridden here: when it is left to the policy file (or
+        # defaulted to audit), the report step recovers the effective mode
+        # from the agent's own startup log line.
         echo "FC_LOG=${FC_LOG}" >> "$GITHUB_ENV"
+        echo "FC_PID=${FC_PID}" >> "$GITHUB_ENV"
         if [ -n "${FC_MODE}" ]; then
           echo "FC_MODE=${FC_MODE}" >> "$GITHUB_ENV"
         fi
