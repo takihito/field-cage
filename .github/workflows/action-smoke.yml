@@ -81,3 +81,93 @@ jobs:
             echo "ERROR: expected at least one denied destination (example.com is not on the allowlist)" >&2
             exit 1
           fi
+
+      - name: Verify agent was stopped by report's default stop-agent
+        if: always()
+        run: |
+          if [ -n "${FC_PID:-}" ] && sudo kill -0 "${FC_PID}" 2>/dev/null; then
+            echo "ERROR: field-cage agent (pid=${FC_PID}) is still running after the report step; stop-agent may have failed." >&2
+            exit 1
+          fi
+          echo "field-cage: confirmed agent (pid=${FC_PID:-unset}) is stopped."
+
+  # ---------------------------------------------------------------
+  # Regression test for the hang described in issue
+  # 2026-08-21-2113_block-mode-can-hang-runner-with-no-timeout-safety-net.md:
+  # block mode's cgroup/connect4 hook covers the runner's own process, so an
+  # agent nobody stops can end up blocking the runner's own status-reporting
+  # traffic and make the job appear to hang rather than finish. This job
+  # deliberately omits any GitHub Actions infrastructure host from the
+  # allowlist and relies solely on `report`'s default stop-agent behavior to
+  # release enforcement before the job wraps up. timeout-minutes bounds the
+  # damage if that regresses.
+  # ---------------------------------------------------------------
+  action-smoke-block-mode:
+    name: Composite action E2E (block mode, auto-stop)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Run field-cage action (block mode)
+        uses: ./
+        with:
+          version: ${{ inputs.version }}
+          mode: block
+          allow: |
+            github.com
+            api.github.com
+          log-file: /tmp/field-cage-block.log
+
+      - name: Generate outbound traffic (allowed and denied)
+        run: |
+          curl -4 -s https://github.com -o /dev/null
+          # Not on the allowlist: expected to fail with a connection error
+          # (block mode denies synchronously, it does not hang).
+          if curl -4 -s --max-time 5 https://example.com -o /dev/null; then
+            echo "ERROR: expected the connection to example.com to be blocked" >&2
+            exit 1
+          fi
+
+      - name: Show field-cage log
+        if: always()
+        run: |
+          echo "=== field-cage log (block mode) ==="
+          cat /tmp/field-cage-block.log 2>/dev/null || echo "(log not found — agent may have failed to start)"
+          echo "===================================="
+
+      - name: Render field-cage report
+        id: report
+        if: always()
+        uses: ./report
+        with:
+          version: ${{ inputs.version }}
+          log-file: /tmp/field-cage-block.log
+          fail-on-deny: false
+
+      - name: Verify report outputs
+        if: always()
+        env:
+          DENIED_COUNT: ${{ steps.report.outputs.denied-count }}
+          ALLOWED_COUNT: ${{ steps.report.outputs.allowed-count }}
+        run: |
+          echo "denied-count=${DENIED_COUNT}"
+          echo "allowed-count=${ALLOWED_COUNT}"
+          if [ "${DENIED_COUNT}" -lt 1 ] || [ "${ALLOWED_COUNT}" -lt 1 ]; then
+            echo "ERROR: expected at least one allowed and one denied destination" >&2
+            exit 1
+          fi
+
+      - name: Verify agent was stopped by report's default stop-agent
+        if: always()
+        run: |
+          if [ -n "${FC_PID:-}" ] && sudo kill -0 "${FC_PID}" 2>/dev/null; then
+            echo "ERROR: field-cage agent (pid=${FC_PID}) is still running after the report step; block-mode enforcement may still cover the runner's own process." >&2
+            exit 1
+          fi
+          echo "field-cage: confirmed agent (pid=${FC_PID:-unset}) is stopped."

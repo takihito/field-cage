@@ -44,6 +44,7 @@ Composite Action でランナー上に field-cage を起動できます。指定
 - エージェントはバックグラウンドで動くため、**ログは後続ステップで確認**してください。例: `cat /tmp/field-cage.log`（パスは `log-file` 入力で変更可）、後述の `report` サブアクションで整形表示、または artifact としてアップロード。Composite Action は後処理（post）ステップを持てないため、ログ回収と停止は呼び出し側で行います。
 - サンプルポリシーはリポジトリの [`.github/field-cage-policy.example.yml`](https://github.com/takihito/field-cage/blob/main/.github/field-cage-policy.example.yml) を参照してください。
 - **監視対象の時間窓**: field-cage はエージェント起動後の通信のみを観測します。ジョブ内でそれより前に実行されるステップ（他アクションの checkout、依存パッケージのインストール等）は監視対象外で、ログや allowlist には現れません。別の egress 監視ツール（例: audit モードの [Harden Runner](https://github.com/step-security/harden-runner)）はジョブ開始時点から監視するため、そちらでは検知されることがありますが、これは field-cage の検知漏れではありません。ギャップを最小化するには、このアクションをジョブのできるだけ早い段階に配置してください。
+- **block モードでは、ジョブ終了前にエージェントを停止してください。** エージェントは cgroup 全体を対象とする eBPF フックで強制するため、ランナー自身のプロセス（ジョブ終了時にステータスを報告する際に開く通信も含む）も対象になります。エージェントを止めないままにすると、その通信までブロックしてしまい、ジョブが正常に失敗せず「ハングしたように見える」状態になり得ます。`takihito/field-cage/report` はレンダリング後に既定でエージェントを停止します（`stop-agent: false` で無効化可）。`report` を使わない場合は代わりに `takihito/field-cage/stop` を呼んでください。
 
 ## レポート: 整形されたジョブサマリ
 
@@ -67,7 +68,18 @@ Composite Action でランナー上に field-cage を起動できます。指定
     fail-on-deny: false    # DENY が1件でもあればジョブを失敗させたい場合は true（主に block モード向け）
 ```
 
-`$GITHUB_STEP_SUMMARY` へ拒否/許可/スキップ宛先の表を書き込み、拒否された宛先ごとにアノテーションを1件発行します（block モードでは `warning`、audit モードでは実際には遮断していないため `notice`）。また `denied-count` / `allowed-count` / `suggested-allowlist`（観測された宛先の JSON 配列。ポリシー作成の出発点として使えるが、採用前にレビューすること）/ `log-file`（実際に解決・レンダリングしたログパス）をステップ出力として公開します。生ログ全文はジョブログへのコピー（既定オフ、`dump-log: true` で有効化）やアーティファクトへのアップロード（`upload-log: true`）を明示的に有効化しない限り出力されません — 上記のサマリを優先する設計です。全入力は [`report/action.yml`](https://github.com/takihito/field-cage/blob/main/report/action.yml) を参照してください。
+`$GITHUB_STEP_SUMMARY` へ拒否/許可/スキップ宛先の表を書き込み、拒否された宛先ごとにアノテーションを1件発行します（block モードでは `warning`、audit モードでは実際には遮断していないため `notice`）。また `denied-count` / `allowed-count` / `suggested-allowlist`（観測された宛先の JSON 配列。ポリシー作成の出発点として使えるが、採用前にレビューすること）/ `log-file`（実際に解決・レンダリングしたログパス）をステップ出力として公開します。生ログ全文はジョブログへのコピー（既定オフ、`dump-log: true` で有効化）やアーティファクトへのアップロード（`upload-log: true`）を明示的に有効化しない限り出力されません — 上記のサマリを優先する設計です。レンダリング後にはエージェントの停止も行います（`stop-agent: false` で無効化可、詳細は後述の「エージェントの停止」参照）。全入力は [`report/action.yml`](https://github.com/takihito/field-cage/blob/main/report/action.yml) を参照してください。
+
+## エージェントの停止
+
+`takihito/field-cage/report` は既定でエージェントを停止するため、通常はこれを直接呼ぶ必要はありません。`report` を使わないジョブ、または後続ステップでエージェントを動かし続けたいために `stop-agent: false` を指定した場合は、ジョブの本当の末尾で `takihito/field-cage/stop` を `if: always()` 付きで呼んでください:
+
+```yaml
+- uses: takihito/field-cage/stop@v0.1.0
+  if: always()
+```
+
+エージェントに `SIGTERM` を送り、少し待ってから必要に応じて `SIGKILL` にエスカレーションします。これが特に重要になるのは block モードです。エージェントは cgroup 全体を対象とする eBPF フックで強制するため、ランナー自身のプロセスも対象に含まれます。ジョブ終了時までエージェントが動き続けていると、ランナー自身のステータス報告用通信までブロックしてしまい、正常な失敗ではなく「ジョブがハングしたように見える」状態になり得ます。
 
 ## CLI: text、JSON、CSV
 

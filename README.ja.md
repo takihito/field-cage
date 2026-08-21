@@ -146,6 +146,11 @@ Composite Action でランナー上に field-cage を起動できます。指定
   ジョブサマリと拒否アノテーションを表示できます。ローカルでは
   `field-cage report --log /tmp/field-cage.log --format text|json|csv` を直接実行できます。
   詳細は[GitHub Actions ドキュメント](https://takihito.github.io/field-cage/ja/github-actions/)を参照。
+- **block モードでは、ジョブ終了前にエージェントを停止してください** — `report` は
+  既定でこれを行いますが、直接 `takihito/field-cage/stop@v0.1.0`（`if: always()`）を
+  呼ぶこともできます。エージェントの強制はランナー自身のプロセスにも及ぶため、
+  停止せずに残すとランナー自身のステータス報告用通信までブロックし、
+  ジョブがハングしたように見える場合があります。
 
 ### リリース
 

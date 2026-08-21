@@ -147,6 +147,11 @@ the background for the rest of the job.
   `field-cage report --log /tmp/field-cage.log --format text|json|csv`
   yourself. See [the GitHub Actions docs](https://takihito.github.io/field-cage/github-actions/)
   for details.
+- **In block mode, stop the agent before the job ends** — `report` does
+  this by default, or call `takihito/field-cage/stop@v0.1.0` (`if: always()`)
+  directly. Its enforcement covers the runner's own process too, so an agent
+  left running can block the runner's own status-reporting traffic and make
+  the job appear to hang.
 
 ### Releases
 
