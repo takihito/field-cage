@@ -2,6 +2,22 @@
 
 Release notes are maintained automatically by [tagpr](https://github.com/Songmu/tagpr).
 
+## [v0.1.0](https://github.com/takihito/field-cage/compare/v0.0.8...v0.1.0) - 2026-08-21
+
+- chore: bump version to 0.1.0 by @takihito in https://github.com/takihito/field-cage/pull/76
+- build(deps): Bump actions/setup-go from 6.4.0 to 7.0.0 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/72
+- build(deps): Bump github/codeql-action/analyze from 4.36.2 to 4.37.2 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/73
+- docs: add GitHub Pages site under docs/ by @takihito in https://github.com/takihito/field-cage/pull/78
+- docs: add curl-based install script by @takihito in https://github.com/takihito/field-cage/pull/84
+- docs: add install instructions to README, fix doc/code drift by @takihito in https://github.com/takihito/field-cage/pull/85
+- build(deps): Bump ossf/scorecard-action from 2.4.3 to 2.4.4 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/83
+- build(deps): Bump github/codeql-action/upload-sarif from 4.36.2 to 4.37.3 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/81
+- Add report subcommand + GitHub Actions job summary/annotations by @takihito in https://github.com/takihito/field-cage/pull/91
+- ci: render smoke-test connection log as a job summary by @takihito in https://github.com/takihito/field-cage/pull/93
+- docs: document report follow-up fixes from PR #91 review by @takihito in https://github.com/takihito/field-cage/pull/92
+- docs: note field-cage's monitoring window vs. job-start-wide audit tools by @takihito in https://github.com/takihito/field-cage/pull/94
+- build(deps): Bump actions/checkout from 7.0.0 to 7.0.1 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/82
+
 ## [v0.0.8](https://github.com/takihito/field-cage/compare/v0.0.7...v0.0.8) - 2026-07-27
 
 - feat: manage release version via internal/version file by @takihito in https://github.com/takihito/field-cage/pull/74
