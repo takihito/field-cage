@@ -36,6 +36,7 @@ verdict=DENY(no-domain)      pid=1236   tgid=1236   comm=curl             dst=93
 | `DENY(no-domain)` | ドメイン不明（IP 直指定、または DNS 応答未観測） |
 | `SKIP(dns)` | ポリシー評価対象外の DNS 通信（信頼リゾルバまたはループバック宛。`allow_all_dns` 設定時やポリシー無しの場合は全 port-53 宛先） |
 | `SKIP(loopback)` | ループバック宛先（`127.0.0.0/8`, `::1`）。enforcement 対象外 |
+| `SKIP(self)` | エージェント自身のプロセスによる接続（allowlist 作成のための起動時 DNS 解決）。監視対象のワークフローによる通信ではない |
 
 ## ポリシーファイル
 

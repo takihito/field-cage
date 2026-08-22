@@ -1,6 +1,6 @@
 ## field-cage report
 
-**mode:** `block` &middot; **events:** 14 &middot; **unparsable log lines:** 1
+**mode:** `block` &middot; **events:** 16 &middot; **unparsable log lines:** 1
 
 | verdict | count |
 | --- | --: |
@@ -9,6 +9,7 @@
 | `DENY(no-domain)` | 1 |
 | `SKIP(dns)` | 3 |
 | `SKIP(loopback)` | 1 |
+| `SKIP(self)` | 2 |
 
 ### Denied destinations (2)
 
@@ -30,13 +31,13 @@ _2 more destinations omitted (raise `--top`)._
 </details>
 
 <details>
-<summary>Skipped: DNS and loopback (2)</summary>
+<summary>Skipped: DNS, loopback, and the agent's own traffic (4)</summary>
 
 | destination | ip | port | count | processes |
 | --- | --- | --: | --: | --- |
 | `10.0.0.2` | &mdash; | 53 | 3 | `curl` |
 
-_1 more destinations omitted (raise `--top`)._
+_3 more destinations omitted (raise `--top`)._
 
 </details>
 

@@ -91,7 +91,7 @@ func (s *Summary) countEvents(pred func(Verdict) bool) int {
 // agent version may emit a verdict this build does not know about, so unknown
 // values are reported rather than dropped.
 func (s *Summary) VerdictCounts() []VerdictCount {
-	known := []Verdict{VerdictAllow, VerdictDenyPolicy, VerdictDenyNoDomain, VerdictSkipDNS, VerdictSkipLoopback}
+	known := []Verdict{VerdictAllow, VerdictDenyPolicy, VerdictDenyNoDomain, VerdictSkipDNS, VerdictSkipLoopback, VerdictSkipSelf}
 	seen := make(map[Verdict]bool, len(known))
 	out := make([]VerdictCount, 0, len(s.ByVerdict))
 	for _, v := range known {
@@ -232,7 +232,13 @@ func (c *Collector) Summary() *Summary {
 		if a.Port != b.Port {
 			return a.Port < b.Port
 		}
-		return a.Verdict < b.Verdict
+		if a.Verdict != b.Verdict {
+			return a.Verdict < b.Verdict
+		}
+		// Same domain, port, count, and verdict (e.g. several resolved IPs of
+		// one domain each seen once): break the tie on IP so the order is
+		// stable regardless of Go's randomized map iteration order.
+		return a.IP < b.IP
 	})
 
 	s.SuggestedAllowlist = make([]string, 0, len(suggested))

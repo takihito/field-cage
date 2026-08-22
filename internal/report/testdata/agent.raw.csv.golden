@@ -13,3 +13,5 @@ DENY(not-in-policy),1040,1040,curl,telemetry.example.com,telemetry.example.com,2
 DENY(not-in-policy),1041,1040,curl,telemetry.example.com,telemetry.example.com,203.0.113.7,443
 DENY(no-domain),1050,1050,python3,198.51.100.9,,198.51.100.9,8443
 SKIP(loopback),1060,1060,node,127.0.0.1,,127.0.0.1,3000
+SKIP(self),2046,2046,field-cage_linu,registry.npmjs.org,registry.npmjs.org,104.16.0.34,53
+SKIP(self),2048,2046,field-cage_linu,registry.npmjs.org,registry.npmjs.org,2606:4700::6810:422,53

@@ -35,6 +35,7 @@ verdict=DENY(no-domain)      pid=1236   tgid=1236   comm=curl             dst=93
 | `DENY(no-domain)` | domain unknown (IP direct, or DNS response not yet observed) |
 | `SKIP(dns)` | DNS traffic exempt from policy evaluation (trusted resolver or loopback; any port-53 destination when `allow_all_dns` is set or no policy is loaded) |
 | `SKIP(loopback)` | loopback destination (`127.0.0.0/8`, `::1`), excluded from enforcement |
+| `SKIP(self)` | connection made by the agent's own process (its startup DNS lookups to seed the allowlist), not by the workflow being monitored |
 
 ## Policy file
 

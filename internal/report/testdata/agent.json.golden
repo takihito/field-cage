@@ -1,14 +1,15 @@
 {
   "schema_version": 1,
   "mode": "block",
-  "total_events": 14,
+  "total_events": 16,
   "malformed_lines": 1,
   "by_verdict": {
     "ALLOW": 7,
     "DENY(no-domain)": 1,
     "DENY(not-in-policy)": 2,
     "SKIP(dns)": 3,
-    "SKIP(loopback)": 1
+    "SKIP(loopback)": 1,
+    "SKIP(self)": 2
   },
   "destinations": [
     {
@@ -93,6 +94,30 @@
       "count": 1,
       "processes": [
         "node"
+      ],
+      "more_processes": 0
+    },
+    {
+      "verdict": "SKIP(self)",
+      "destination": "registry.npmjs.org",
+      "domain": "registry.npmjs.org",
+      "ip": "104.16.0.34",
+      "port": 53,
+      "count": 1,
+      "processes": [
+        "field-cage_linu"
+      ],
+      "more_processes": 0
+    },
+    {
+      "verdict": "SKIP(self)",
+      "destination": "registry.npmjs.org",
+      "domain": "registry.npmjs.org",
+      "ip": "2606:4700::6810:422",
+      "port": 53,
+      "count": 1,
+      "processes": [
+        "field-cage_linu"
       ],
       "more_processes": 0
     }

@@ -37,7 +37,7 @@ func (r markdownRenderer) Render(w io.Writer, s *Summary) error {
 		r.writeTable(b, denied)
 	}
 	r.writeDetails(b, fmt.Sprintf("Allowed destinations (%d)", len(s.Allowed())), s.Allowed())
-	r.writeDetails(b, fmt.Sprintf("Skipped: DNS and loopback (%d)", len(s.Skipped())), s.Skipped())
+	r.writeDetails(b, fmt.Sprintf("Skipped: DNS, loopback, and the agent's own traffic (%d)", len(s.Skipped())), s.Skipped())
 
 	if len(s.SuggestedAllowlist) > 0 {
 		b.WriteString("<details>\n<summary>Suggested allowlist (review before use)</summary>\n\n")

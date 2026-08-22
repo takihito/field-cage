@@ -176,6 +176,7 @@ func run(configPath, flagMode string) error {
 		allower = engine
 	}
 	dnsExempt := dnsExemptFor(engine, resolvers)
+	selfPID := uint32(os.Getpid())
 
 	readErr := make(chan error, 1)
 	go func() {
@@ -186,7 +187,7 @@ func run(configPath, flagMode string) error {
 				return
 			}
 
-			verdict := report.VerdictFor(ev.DPort, ev.DAddr, ev.Domain, allower, dnsExempt)
+			verdict := verdictForEvent(ev.TGID, ev.DPort, ev.DAddr, ev.Domain, selfPID, allower, dnsExempt)
 			fmt.Println(report.Line{
 				Verdict: verdict,
 				PID:     ev.PID,
@@ -234,6 +235,25 @@ func dnsExemptFor(engine *policy.Engine, resolvers []net.IP) report.DNSExempt {
 		_, ok := set[ip.String()] // v4-mapped IPv6 canonicalizes to dotted quad
 		return ok
 	}
+}
+
+// verdictForEvent classifies one captured connection, giving SKIP(self)
+// priority over every other verdict when the event's TGID is the agent's own
+// process. The agent makes no outbound connections of its own except the DNS
+// lookups seedAllowlist performs at startup to resolve each policy domain;
+// Go's resolver issues one connect() per candidate resolved address as an
+// internal address-preference probe (never sending real DNS or application
+// data), and the connect() tracepoint captures those like any other event —
+// attributing them to a real-looking destination (e.g. a CDN IP for an
+// allowlisted domain) the agent never actually talked to. Matching by TGID
+// rather than time-bounding the check is deliberate: the agent has no other
+// reason to make an outbound connection for the rest of its lifetime, so a
+// blanket match stays precise without needing to track a seeding window.
+func verdictForEvent(evTGID uint32, dport uint16, daddr net.IP, domain string, selfPID uint32, allow report.Allower, dnsExempt report.DNSExempt) report.Verdict {
+	if evTGID == selfPID {
+		return report.VerdictSkipSelf
+	}
+	return report.VerdictFor(dport, daddr, domain, allow, dnsExempt)
 }
 
 // seedAllowlist primes the enforcement maps with the policy's explicit IP and

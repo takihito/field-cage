@@ -1,4 +1,4 @@
-field-cage report  mode=block  events=14  malformed-lines=1
+field-cage report  mode=block  events=16  malformed-lines=1
 
 VERDICT              COUNT
 ALLOW                7
@@ -6,10 +6,11 @@ DENY(not-in-policy)  2
 DENY(no-domain)      1
 SKIP(dns)            3
 SKIP(loopback)       1
+SKIP(self)           2
 
 COUNT  VERDICT              DESTINATION            IP           PORT  PROCESSES
 2      DENY(not-in-policy)  telemetry.example.com  203.0.113.7  443   curl
-... 6 more destinations omitted (raise --top)
+... 8 more destinations omitted (raise --top)
 
 SUGGESTED ALLOWLIST (review before use)
   198.51.100.9

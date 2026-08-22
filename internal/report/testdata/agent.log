@@ -14,5 +14,7 @@ verdict=DENY(not-in-policy)  pid=1040   tgid=1040   comm=curl             dst=te
 verdict=DENY(not-in-policy)  pid=1041   tgid=1040   comm=curl             dst=telemetry.example.com (203.0.113.7):443
 verdict=DENY(no-domain)      pid=1050   tgid=1050   comm=python3          dst=198.51.100.9:8443
 verdict=SKIP(loopback)       pid=1060   tgid=1060   comm=node             dst=127.0.0.1:3000
+verdict=SKIP(self)           pid=2046   tgid=2046   comm=field-cage_linu  dst=registry.npmjs.org (104.16.0.34):53
+verdict=SKIP(self)           pid=2048   tgid=2046   comm=field-cage_linu  dst=registry.npmjs.org (2606:4700::6810:422):53
 verdict=ALLOW pid=x tgid=1 comm=broken dst=1.2.3.4:80
 time=2026-08-20T12:01:00.000Z level=INFO msg="shutting down"
