@@ -176,6 +176,13 @@ func run(configPath, flagMode string) error {
 		allower = engine
 	}
 	dnsExempt := dnsExemptFor(engine, resolvers)
+	// bpf_get_current_pid_tgid() (used by the eBPF programs to populate every
+	// captured event's TGID) reports the *host* PID namespace's value, so
+	// os.Getpid() only matches it when the agent itself also runs in the
+	// host PID namespace. The GitHub Actions composite action always runs
+	// the binary directly on the runner (no container), so this holds there;
+	// a container deployment needs `--pid=host` (see the `run`/`run-dev`
+	// Makefile targets) or SKIP(self) silently never matches.
 	selfPID := uint32(os.Getpid())
 
 	readErr := make(chan error, 1)
