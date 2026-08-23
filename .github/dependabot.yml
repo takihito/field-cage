@@ -11,3 +11,13 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    groups:
+      # github/codeql-action ships init/analyze/upload-sarif as one release;
+      # init writes a config file that analyze checks against its own running
+      # version, so bumping only one of them (as separate per-reference PRs
+      # would) leaves main with a mismatched pair and CodeQL analysis fails:
+      #   "Loaded a configuration file for version 'X', but running version 'Y'"
+      # Group every reference so they always move together in one PR.
+      codeql-action:
+        patterns:
+          - "github/codeql-action/*"
