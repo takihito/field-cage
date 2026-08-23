@@ -1,12 +1,19 @@
 package main
 
 import (
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/takihito/field-cage/internal/policy"
+	"github.com/takihito/field-cage/internal/report"
 )
+
+// allowFunc adapts a function to the report.Allower interface for tests.
+type allowFunc func(domain string, ip net.IP) bool
+
+func (f allowFunc) Allow(domain string, ip net.IP) bool { return f(domain, ip) }
 
 // loadEngine writes a minimal policy file and loads it. An empty mode omits
 // the mode line entirely (unspecified).
@@ -64,5 +71,42 @@ func TestResolveMode(t *testing.T) {
 				t.Errorf("resolveMode(%q) = %q, want %q", tc.flagMode, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestVerdictForEventPrioritizesSelf(t *testing.T) {
+	const selfPID = uint32(4242)
+	publicIP := net.IPv4(93, 184, 216, 34)
+
+	// Even a destination that would otherwise be denied must classify as
+	// SKIP(self) when the event's TGID is the agent's own PID: self-events
+	// are never real application traffic, so no other verdict should win.
+	denyAll := allowFunc(func(string, net.IP) bool { return false })
+	got := verdictForEvent(selfPID, 53, publicIP, "registry.npmjs.org", selfPID, denyAll, nil)
+	if got != report.VerdictSkipSelf {
+		t.Errorf("verdictForEvent (self, port 53) = %q, want %q", got, report.VerdictSkipSelf)
+	}
+
+	got = verdictForEvent(selfPID, 443, publicIP, "evil.example", selfPID, denyAll, nil)
+	if got != report.VerdictSkipSelf {
+		t.Errorf("verdictForEvent (self, port 443, would-be-denied) = %q, want %q", got, report.VerdictSkipSelf)
+	}
+}
+
+func TestVerdictForEventFallsThroughForOtherProcesses(t *testing.T) {
+	const selfPID = uint32(4242)
+	const otherPID = uint32(9999)
+	publicIP := net.IPv4(93, 184, 216, 34)
+
+	allowAll := allowFunc(func(string, net.IP) bool { return true })
+	got := verdictForEvent(otherPID, 443, publicIP, "example.com", selfPID, allowAll, nil)
+	if got != report.VerdictAllow {
+		t.Errorf("verdictForEvent (other process) = %q, want %q", got, report.VerdictAllow)
+	}
+
+	denyAll := allowFunc(func(string, net.IP) bool { return false })
+	got = verdictForEvent(otherPID, 443, publicIP, "evil.example", selfPID, denyAll, nil)
+	if got != report.VerdictDenyPolicy {
+		t.Errorf("verdictForEvent (other process, denied) = %q, want %q", got, report.VerdictDenyPolicy)
 	}
 }

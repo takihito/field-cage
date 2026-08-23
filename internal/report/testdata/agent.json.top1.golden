@@ -1,14 +1,15 @@
 {
   "schema_version": 1,
   "mode": "block",
-  "total_events": 14,
+  "total_events": 16,
   "malformed_lines": 1,
   "by_verdict": {
     "ALLOW": 7,
     "DENY(no-domain)": 1,
     "DENY(not-in-policy)": 2,
     "SKIP(dns)": 3,
-    "SKIP(loopback)": 1
+    "SKIP(loopback)": 1,
+    "SKIP(self)": 2
   },
   "destinations": [
     {
@@ -24,7 +25,7 @@
       "more_processes": 0
     }
   ],
-  "omitted_destinations": 6,
+  "omitted_destinations": 8,
   "suggested_allowlist": [
     "198.51.100.9",
     "2606:4700::6810:23",

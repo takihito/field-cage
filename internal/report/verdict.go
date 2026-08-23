@@ -28,6 +28,20 @@ const (
 	// VerdictSkipLoopback marks loopback traffic (127.0.0.0/8), which is
 	// excluded from enforcement at the eBPF level.
 	VerdictSkipLoopback Verdict = "SKIP(loopback)"
+	// VerdictSkipSelf marks a connection made by the field-cage agent's own
+	// process (matched by TGID), not by the workflow it is monitoring. The
+	// agent makes no outbound connections of its own except the DNS lookups
+	// it performs at startup to seed the allowlist with each policy domain's
+	// current addresses (see seedAllowlist in cmd/agent). Go's resolver
+	// issues one connect() per candidate resolved address as an internal
+	// address-preference probe (RFC 6724-style sorting) — never sending real
+	// DNS or application data — and the connect() tracepoint captures those
+	// like any other event, attributing them to a real-looking destination
+	// (e.g. a CDN IP for an allowlisted domain) that the agent never actually
+	// talked to. Labelling them SKIP(self) keeps them out of ALLOW/DENY
+	// counts and off the suggested allowlist, while still recording them
+	// rather than silently dropping the event entirely.
+	VerdictSkipSelf Verdict = "SKIP(self)"
 	// VerdictDenyNoDomain marks a denied connection whose destination IP has
 	// no resolved domain in the DNS cache.
 	VerdictDenyNoDomain Verdict = "DENY(no-domain)"

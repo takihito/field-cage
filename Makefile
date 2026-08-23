@@ -17,10 +17,19 @@ tidy:
 build:
 	docker build --target runtime -t $(IMAGE) .
 
-# Run with the privileges required for eBPF
+# Run with the privileges required for eBPF.
+# --pid=host: without it, the agent's own os.Getpid() would report a PID in
+# the container's own namespace while bpf_get_current_pid_tgid() (used by the
+# eBPF programs) reports the host namespace's TGID for every captured event —
+# the two would never match, silently breaking the SKIP(self) classification
+# of the agent's own startup DNS lookups. The container is already
+# --privileged and its eBPF programs already enforce at the root cgroup
+# (host-wide), so sharing the host PID namespace adds no meaningful privilege
+# beyond what it already has.
 run:
 	docker run --rm \
 		--privileged \
+		--pid=host \
 		-v /sys/kernel/debug:/sys/kernel/debug:ro \
 		-v /sys/fs/bpf:/sys/fs/bpf \
 		$(IMAGE)
@@ -28,10 +37,11 @@ run:
 # Local verification: Ubuntu-based image with curl/wget so traffic can be
 # generated inside the same container as the agent. Runs detached; generate
 # traffic and watch logs as printed below.
+# --pid=host: see the comment on the `run` target above.
 run-dev:
 	docker build --target runtime-dev -t $(DEV_IMAGE) .
 	-docker rm -f fc-dev 2>/dev/null
-	docker run --rm -d --privileged --name fc-dev \
+	docker run --rm -d --privileged --pid=host --name fc-dev \
 		-v /sys/kernel/debug:/sys/kernel/debug:ro \
 		-v /sys/fs/bpf:/sys/fs/bpf \
 		$(DEV_IMAGE)
