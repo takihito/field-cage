@@ -2,6 +2,12 @@
 
 Release notes are maintained automatically by [tagpr](https://github.com/Songmu/tagpr).
 
+## [v0.1.2](https://github.com/takihito/field-cage/compare/v0.1.1...v0.1.2) - 2026-08-23
+
+- Add SKIP(self) verdict for the agent's own startup DNS probe connects by @takihito in https://github.com/takihito/field-cage/pull/97
+- build(deps): Bump github/codeql-action/upload-sarif from 4.37.3 to 4.37.7 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/89
+- build(deps): Bump step-security/harden-runner from 2.20.0 to 2.21.0 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/88
+
 ## [v0.1.1](https://github.com/takihito/field-cage/compare/v0.1.0...v0.1.1) - 2026-08-21
 
 - Auto-stop the agent to prevent block-mode jobs from hanging (Phase 1) by @takihito in https://github.com/takihito/field-cage/pull/95
