@@ -29,7 +29,7 @@ func (r markdownRenderer) Render(w io.Writer, s *Summary) error {
 
 	denied, allowed, skipped := s.Denied(), s.Allowed(), s.Skipped()
 	fmt.Fprintf(b, "✅ **%d** allowed &nbsp;&middot;&nbsp; \U0001F6AB **%d** denied &nbsp;&middot;&nbsp; ⏭️ **%d** skipped\n\n",
-		s.AllowedEvents(), s.DeniedEvents(), s.Total-s.AllowedEvents()-s.DeniedEvents())
+		s.AllowedEvents(), s.DeniedEvents(), s.SkippedEvents())
 
 	b.WriteString("| verdict | count |\n| --- | --: |\n")
 	for _, vc := range s.VerdictCounts() {
