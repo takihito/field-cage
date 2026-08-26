@@ -2,6 +2,10 @@
 
 Release notes are maintained automatically by [tagpr](https://github.com/Songmu/tagpr).
 
+## [v0.1.4](https://github.com/takihito/field-cage/compare/v0.1.3...v0.1.4) - 2026-08-26
+
+- report: decorate markdown title with seedling/clover emoji by @takihito in https://github.com/takihito/field-cage/pull/105
+
 ## [v0.1.3](https://github.com/takihito/field-cage/compare/v0.1.2...v0.1.3) - 2026-08-24
 
 - ci: bump codeql-action init and analyze together to v4.37.7 by @takihito in https://github.com/takihito/field-cage/pull/100
