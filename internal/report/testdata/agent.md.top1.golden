@@ -1,17 +1,19 @@
-## field-cage report
+## 🌱 field-cage report 🍀
 
-**mode:** `block` &middot; **events:** 16 &middot; **unparsable log lines:** 1
+🔒 **mode:** `block` &middot; 📊 **events:** 16 &middot; ⚠️ **unparsable log lines:** 1
+
+✅ **7** allowed &nbsp;&middot;&nbsp; 🚫 **3** denied &nbsp;&middot;&nbsp; ⏭️ **6** skipped
 
 | verdict | count |
 | --- | --: |
-| `ALLOW` | 7 |
-| `DENY(not-in-policy)` | 2 |
-| `DENY(no-domain)` | 1 |
-| `SKIP(dns)` | 3 |
-| `SKIP(loopback)` | 1 |
-| `SKIP(self)` | 2 |
+| ✅ `ALLOW` | 7 |
+| 🚫 `DENY(not-in-policy)` | 2 |
+| 🚫 `DENY(no-domain)` | 1 |
+| ⏭️ `SKIP(dns)` | 3 |
+| ⏭️ `SKIP(loopback)` | 1 |
+| ⏭️ `SKIP(self)` | 2 |
 
-### Denied destinations (2)
+### 🚫 Denied destinations (2)
 
 | destination | ip | port | count | processes |
 | --- | --- | --: | --: | --- |
@@ -20,7 +22,7 @@
 _1 more destinations omitted (raise `--top`)._
 
 <details>
-<summary>Allowed destinations (3)</summary>
+<summary>✅ Allowed destinations (3)</summary>
 
 | destination | ip | port | count | processes |
 | --- | --- | --: | --: | --- |
@@ -31,7 +33,7 @@ _2 more destinations omitted (raise `--top`)._
 </details>
 
 <details>
-<summary>Skipped: DNS, loopback, and the agent's own traffic (4)</summary>
+<summary>⏭️ Skipped: DNS, loopback, and the agent's own traffic (4)</summary>
 
 | destination | ip | port | count | processes |
 | --- | --- | --: | --: | --- |
@@ -42,7 +44,7 @@ _3 more destinations omitted (raise `--top`)._
 </details>
 
 <details>
-<summary>Suggested allowlist (review before use)</summary>
+<summary>📋 Suggested allowlist (review before use)</summary>
 
 ```yaml
 allowlist:

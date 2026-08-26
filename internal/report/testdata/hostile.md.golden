@@ -1,13 +1,15 @@
-## field-cage report
+## 🌱 field-cage report 🍀
 
-**mode:** `audit (no policy)` &middot; **events:** 3
+🔍 **mode:** `audit (no policy)` &middot; 📊 **events:** 3
+
+✅ **1** allowed &nbsp;&middot;&nbsp; 🚫 **2** denied &nbsp;&middot;&nbsp; ⏭️ **0** skipped
 
 | verdict | count |
 | --- | --: |
-| `ALLOW` | 1 |
-| `DENY(not-in-policy)` | 2 |
+| ✅ `ALLOW` | 1 |
+| 🚫 `DENY(not-in-policy)` | 2 |
 
-### Denied destinations (2)
+### 🚫 Denied destinations (2)
 
 | destination | ip | port | count | processes |
 | --- | --- | --: | --: | --- |
@@ -15,7 +17,7 @@
 | `x::warning::pwn.example` | `203.0.113.10` | 443 | 1 | `::set-output` |
 
 <details>
-<summary>Allowed destinations (1)</summary>
+<summary>✅ Allowed destinations (1)</summary>
 
 | destination | ip | port | count | processes |
 | --- | --- | --: | --: | --- |
@@ -24,7 +26,7 @@
 </details>
 
 <details>
-<summary>Suggested allowlist (review before use)</summary>
+<summary>📋 Suggested allowlist (review before use)</summary>
 
 ```yaml
 allowlist:
