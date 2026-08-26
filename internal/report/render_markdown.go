@@ -28,8 +28,17 @@ func (r markdownRenderer) Render(w io.Writer, s *Summary) error {
 	}
 
 	denied, allowed, skipped := s.Denied(), s.Allowed(), s.Skipped()
-	fmt.Fprintf(b, "✅ **%d** allowed &nbsp;&middot;&nbsp; \U0001F6AB **%d** denied &nbsp;&middot;&nbsp; ⏭️ **%d** skipped\n\n",
+	fmt.Fprintf(b, "✅ **%d** allowed &nbsp;&middot;&nbsp; \U0001F6AB **%d** denied &nbsp;&middot;&nbsp; ⏭️ **%d** skipped",
 		s.AllowedEvents(), s.DeniedEvents(), s.SkippedEvents())
+	// Allowed+denied+skipped only accounts for verdicts this build recognises;
+	// a future agent version may emit one it doesn't, and VerdictCounts
+	// deliberately keeps such events out of all three buckets rather than
+	// misclassifying them. Surface the remainder explicitly so the totals
+	// still add up to **events** instead of silently looking short.
+	if unknown := s.Total - s.AllowedEvents() - s.DeniedEvents() - s.SkippedEvents(); unknown > 0 {
+		fmt.Fprintf(b, " &nbsp;&middot;&nbsp; ❓ **%d** unknown", unknown)
+	}
+	b.WriteString("\n\n")
 
 	b.WriteString("| verdict | count |\n| --- | --: |\n")
 	for _, vc := range s.VerdictCounts() {
@@ -61,12 +70,18 @@ func (r markdownRenderer) Render(w io.Writer, s *Summary) error {
 }
 
 // modeEmoji picks a glyph reflecting the enforcement mode, so the reader can
-// tell block from audit at a glance without reading the label.
+// tell block from audit at a glance without reading the label. An empty mode
+// (the log had no startup diagnostic) renders as "unknown" via modeLabel, so
+// it gets a neutral glyph too rather than implying audit mode was observed.
 func modeEmoji(mode string) string {
-	if strings.HasPrefix(mode, "block") {
+	switch {
+	case mode == "":
+		return "❓"
+	case strings.HasPrefix(mode, "block"):
 		return "\U0001F512" // lock: block mode enforces the allowlist
+	default:
+		return "\U0001F50D" // magnifying glass: audit mode only observes
 	}
-	return "\U0001F50D" // magnifying glass: audit mode only observes
 }
 
 // verdictEmoji picks a glyph per verdict family so the tally table is
