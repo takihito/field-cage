@@ -13,34 +13,48 @@ type markdownRenderer struct{ opts Options }
 
 func (r markdownRenderer) Render(w io.Writer, s *Summary) error {
 	b := &strings.Builder{}
-	fmt.Fprintf(b, "## field-cage report\n\n")
-	fmt.Fprintf(b, "**mode:** `%s` &middot; **events:** %d", markdownEscape(modeLabel(s.Mode)), s.Total)
+	fmt.Fprintf(b, "## \U0001F331 field-cage report \U0001F340\n\n")
+	fmt.Fprintf(b, "%s **mode:** `%s` &middot; \U0001F4CA **events:** %d",
+		modeEmoji(s.Mode), markdownEscape(modeLabel(s.Mode)), s.Total)
 	if s.Malformed > 0 {
-		fmt.Fprintf(b, " &middot; **unparsable log lines:** %d", s.Malformed)
+		fmt.Fprintf(b, " &middot; ⚠️ **unparsable log lines:** %d", s.Malformed)
 	}
 	fmt.Fprintf(b, "\n\n")
 
 	if s.Total == 0 {
-		fmt.Fprintf(b, "No connection events were captured.\n")
+		fmt.Fprintf(b, "✅ No connection events were captured.\n")
 		_, err := io.WriteString(w, b.String())
 		return err
 	}
 
+	denied, allowed, skipped := s.Denied(), s.Allowed(), s.Skipped()
+	fmt.Fprintf(b, "✅ **%d** allowed &nbsp;&middot;&nbsp; \U0001F6AB **%d** denied &nbsp;&middot;&nbsp; ⏭️ **%d** skipped",
+		s.AllowedEvents(), s.DeniedEvents(), s.SkippedEvents())
+	// Allowed+denied+skipped only accounts for verdicts this build recognises;
+	// a future agent version may emit one it doesn't, and VerdictCounts
+	// deliberately keeps such events out of all three buckets rather than
+	// misclassifying them. Surface the remainder explicitly so the totals
+	// still add up to **events** instead of silently looking short.
+	if unknown := s.Total - s.AllowedEvents() - s.DeniedEvents() - s.SkippedEvents(); unknown > 0 {
+		fmt.Fprintf(b, " &nbsp;&middot;&nbsp; ❓ **%d** unknown", unknown)
+	}
+	b.WriteString("\n\n")
+
 	b.WriteString("| verdict | count |\n| --- | --: |\n")
 	for _, vc := range s.VerdictCounts() {
-		fmt.Fprintf(b, "| `%s` | %d |\n", markdownEscape(string(vc.Verdict)), vc.Count)
+		fmt.Fprintf(b, "| %s `%s` | %d |\n", verdictEmoji(vc.Verdict), markdownEscape(string(vc.Verdict)), vc.Count)
 	}
 	b.WriteString("\n")
 
-	if denied := s.Denied(); len(denied) > 0 {
-		fmt.Fprintf(b, "### Denied destinations (%d)\n\n", len(denied))
+	if len(denied) > 0 {
+		fmt.Fprintf(b, "### \U0001F6AB Denied destinations (%d)\n\n", len(denied))
 		r.writeTable(b, denied)
 	}
-	r.writeDetails(b, fmt.Sprintf("Allowed destinations (%d)", len(s.Allowed())), s.Allowed())
-	r.writeDetails(b, fmt.Sprintf("Skipped: DNS, loopback, and the agent's own traffic (%d)", len(s.Skipped())), s.Skipped())
+	r.writeDetails(b, fmt.Sprintf("✅ Allowed destinations (%d)", len(allowed)), allowed)
+	r.writeDetails(b, fmt.Sprintf("⏭️ Skipped: DNS, loopback, and the agent's own traffic (%d)", len(skipped)), skipped)
 
 	if len(s.SuggestedAllowlist) > 0 {
-		b.WriteString("<details>\n<summary>Suggested allowlist (review before use)</summary>\n\n")
+		b.WriteString("<details>\n<summary>\U0001F4CB Suggested allowlist (review before use)</summary>\n\n")
 		b.WriteString("```yaml\nallowlist:\n")
 		for _, d := range s.SuggestedAllowlist {
 			// Single-quote each entry so a destination containing YAML
@@ -53,6 +67,36 @@ func (r markdownRenderer) Render(w io.Writer, s *Summary) error {
 
 	_, err := io.WriteString(w, b.String())
 	return err
+}
+
+// modeEmoji picks a glyph reflecting the enforcement mode, so the reader can
+// tell block from audit at a glance without reading the label. An empty mode
+// (the log had no startup diagnostic) renders as "unknown" via modeLabel, so
+// it gets a neutral glyph too rather than implying audit mode was observed.
+func modeEmoji(mode string) string {
+	switch {
+	case mode == "":
+		return "❓"
+	case strings.HasPrefix(mode, "block"):
+		return "\U0001F512" // lock: block mode enforces the allowlist
+	default:
+		return "\U0001F50D" // magnifying glass: audit mode only observes
+	}
+}
+
+// verdictEmoji picks a glyph per verdict family so the tally table is
+// scannable without reading every label.
+func verdictEmoji(v Verdict) string {
+	switch {
+	case v.IsDeny():
+		return "\U0001F6AB"
+	case v.IsAllow():
+		return "✅"
+	case v.IsSkip():
+		return "⏭️"
+	default:
+		return "❓"
+	}
 }
 
 func (r markdownRenderer) writeDetails(b *strings.Builder, summary string, rows []DestStat) {

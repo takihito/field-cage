@@ -72,9 +72,14 @@ func (s *Summary) filter(pred func(Verdict) bool) []DestStat {
 }
 
 // DeniedEvents returns the number of denied connection events (not
-// destinations); AllowedEvents does the same for allowed events.
+// destinations); AllowedEvents and SkippedEvents do the same for allowed and
+// skipped events. A future agent version may emit a verdict this build does
+// not know about, and such events count toward none of the three: they are
+// neither allowed, denied, nor skipped, so the totals stay accurate rather
+// than misreporting an unknown decision as policy-exempt traffic.
 func (s *Summary) DeniedEvents() int  { return s.countEvents(Verdict.IsDeny) }
 func (s *Summary) AllowedEvents() int { return s.countEvents(Verdict.IsAllow) }
+func (s *Summary) SkippedEvents() int { return s.countEvents(Verdict.IsSkip) }
 
 func (s *Summary) countEvents(pred func(Verdict) bool) int {
 	n := 0
