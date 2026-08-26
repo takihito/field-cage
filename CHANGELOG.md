@@ -2,6 +2,14 @@
 
 Release notes are maintained automatically by [tagpr](https://github.com/Songmu/tagpr).
 
+## [v0.1.3](https://github.com/takihito/field-cage/compare/v0.1.2...v0.1.3) - 2026-08-24
+
+- ci: bump codeql-action init and analyze together to v4.37.7 by @takihito in https://github.com/takihito/field-cage/pull/100
+- build(deps): Bump golang.org/x/net from 0.57.0 to 0.58.0 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/86
+- ci: group codeql-action dependabot updates into one PR by @takihito in https://github.com/takihito/field-cage/pull/102
+- ci: tighten GITHUB_TOKEN permissions per Scorecard's Token-Permissions check by @takihito in https://github.com/takihito/field-cage/pull/103
+- build(deps): Bump the codeql-action group with 3 updates by @dependabot[bot] in https://github.com/takihito/field-cage/pull/104
+
 ## [v0.1.2](https://github.com/takihito/field-cage/compare/v0.1.1...v0.1.2) - 2026-08-23
 
 - Add SKIP(self) verdict for the agent's own startup DNS probe connects by @takihito in https://github.com/takihito/field-cage/pull/97
