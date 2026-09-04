@@ -1,5 +1,7 @@
 # tagpr configuration (https://github.com/Songmu/tagpr)
 [tagpr]
+    # For Immutable releases 
+    release = draft
     # Tags are prefixed with "v" (e.g. v0.1.0).
     vPrefix = true
     # The branch tagpr watches and tags from.
