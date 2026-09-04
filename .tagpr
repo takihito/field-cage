@@ -1,14 +1,16 @@
 # tagpr configuration (https://github.com/Songmu/tagpr)
 [tagpr]
-    # For Immutable releases 
-    release = draft
     # Tags are prefixed with "v" (e.g. v0.1.0).
     vPrefix = true
     # The branch tagpr watches and tags from.
     releaseBranch = main
     # Maintain CHANGELOG.md from merged PRs.
     changelog = true
-    # Do not create a GitHub Release; GoReleaser (release.yml) handles that
-    # so binaries and checksums are published alongside the release notes.
-    noRelease = true
-	versionFile = internal/version/version.go
+    # Immutable Releases: tagpr creates the GitHub Release as a *draft* (with the
+    # release notes). GoReleaser (release.yml) reuses that draft via
+    # `release.use_existing_draft: true`, uploads binaries/checksums, and the
+    # workflow publishes it only after the cosign bundle and SLSA provenance are
+    # attached. Once published, an immutable release can no longer be modified.
+    # See https://songmu.jp/riji/entry/2025-09-05-coordinate-tagpr-and-goreleaser-with-immutable-releases.html
+    release = draft
+    versionFile = internal/version/version.go
