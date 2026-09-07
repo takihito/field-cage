@@ -47,8 +47,14 @@ release:
   github:
     owner: takihito
     name: field-cage
-  draft: false
+  # Immutable Releases flow: tagpr creates the release as a draft (.tagpr:
+  # `release = draft`); GoReleaser reuses that draft and uploads the assets.
+  # Keep it a draft here so the cosign bundle and SLSA provenance can still be
+  # attached afterwards; release.yml publishes it as the final step. A published
+  # immutable release cannot be modified, so publishing must come last.
+  draft: true
   prerelease: auto
+  use_existing_draft: true
 
 changelog:
   use: github
