@@ -2,6 +2,15 @@
 
 Release notes are maintained automatically by [tagpr](https://github.com/Songmu/tagpr).
 
+## [v0.1.5](https://github.com/takihito/field-cage/compare/v0.1.4...v0.1.5) - 2026-09-09
+
+- build(deps): Bump Songmu/tagpr from 1.20.1 to 1.20.2 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/108
+- build(deps): Bump the codeql-action group with 3 updates by @dependabot[bot] in https://github.com/takihito/field-cage/pull/107
+- Immutable releases を有効にする対応 by @takihito in https://github.com/takihito/field-cage/pull/110
+- build(deps): Bump golang.org/x/sys from 0.47.0 to 0.48.0 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/111
+- build(deps): Bump step-security/harden-runner from 2.21.0 to 2.21.1 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/112
+- build(deps): Bump Songmu/tagpr from 1.20.2 to 1.20.3 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/113
+
 ## [v0.1.4](https://github.com/takihito/field-cage/compare/v0.1.3...v0.1.4) - 2026-08-26
 
 - report: decorate markdown title with seedling/clover emoji by @takihito in https://github.com/takihito/field-cage/pull/105
