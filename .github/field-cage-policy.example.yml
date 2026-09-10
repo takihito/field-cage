@@ -1,7 +1,10 @@
 # Example field-cage policy.
 # Copy to your repo (e.g. .github/field-cage-policy.yml) and pass via the
-# action's `config` input. Domain matching is exact and case-insensitive;
-# wildcards are NOT supported — list each host explicitly.
+# action's `config` input. Domain matching is exact and case-insensitive.
+# Wildcards are supported only as "*.example.com" (must anchor at least a
+# second-level domain — "*.com" / "*.jp" are rejected as too broad), and
+# match proper subdomains only ("*.example.com" does not also allow
+# "example.com" — list that separately if needed).
 mode: audit # audit (log-only) or block (default-deny enforcement)
 
 allowlist:
@@ -10,4 +13,6 @@ allowlist:
   - codeload.github.com
   - objects.githubusercontent.com
   - registry.npmjs.org
+  # - '*.npmjs.org'  # wildcard: matches any subdomain of npmjs.org (must be
+  #                  # quoted — a bare "*" is a YAML alias indicator)
   # - 140.82.121.4   # raw IPv4 addresses are also supported

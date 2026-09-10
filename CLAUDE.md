@@ -96,7 +96,7 @@ Development milestones
 5. Log quality: `SKIP(dns)` / `SKIP(loopback)` verdicts ✅; TCP connection timing (connect_ns is captured but not logged; pending decision on display format)
 6. IPv6 support: monitoring and block-mode enforcement (`cgroup/connect6`, `allowed_ips6`) ✅
 7. DNS hardening: port 53 restricted to trusted resolvers (opt-out via `allow_all_dns`), DNS-response source validation for live allowlisting ✅
-8. Policy UX hardening: CIDR/LPM-trie allowlist entries, strict unknown-key rejection, wildcard-entry rejection, `--version` flag ✅
+8. Policy UX hardening: CIDR/LPM-trie allowlist entries, strict unknown-key rejection, `--version` flag ✅; SLD-anchored wildcard allowlist entries (`*.example.com`; bare-TLD wildcards like `*.com`/`*.jp` rejected) ✅
 9. Supply-chain hardening: cosign keyless signing + SLSA Level 3 provenance on releases, tagpr-managed versioning, YAML-injection-safe quoting for the `allow` action input ✅
 10. Distribution: GitHub Pages documentation site and `curl | sh` install script (Linux only — no macOS/Windows build) ✅
 11. Report formatting: `report` subcommand (text/json/csv/markdown/annotations) plus a `report/action.yml` sub-action for job summaries, denial annotations, and allowlist suggestions ✅

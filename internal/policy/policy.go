@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"slices"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -33,12 +34,19 @@ type Config struct {
 }
 
 // Engine evaluates outbound connections against a policy.
-// Domain matching is exact (case-insensitive). Wildcards are not supported.
+// Domain matching is exact (case-insensitive), except for wildcard entries
+// of the form "*.example.com", which match any proper subdomain (but not
+// "example.com" itself — list that separately if it must also be allowed).
+// A wildcard must anchor at least a second-level domain ("*.example.com" is
+// valid; "*.com" is rejected at load time as too broad). This is a simple
+// label-count check, not a public-suffix list, so a wildcard like "*.co.jp"
+// is accepted even though co.jp is itself a registrable-suffix-like TLD.
 // CIDR ranges are supported for IPv4 ("10.0.0.0/8") and IPv6
 // ("2001:db8::/32") subnets.
 type Engine struct {
 	mode        Mode
 	domains     map[string]struct{}
+	wildcards   []string          // dot-prefixed suffixes, lowercased (e.g. ".example.com" for entry "*.example.com")
 	allowedIP   map[string]net.IP // canonical string form → parsed IP
 	cidrs       []*net.IPNet
 	allowAllDNS bool
@@ -78,37 +86,55 @@ func newEngine(cfg Config) (*Engine, error) {
 	}
 	for _, entry := range cfg.Allowlist {
 		entry = strings.TrimSpace(entry)
-		if strings.Contains(entry, "*") {
-			// Matching is exact, so a wildcard entry would be stored as a
-			// literal name that never matches — in block mode that silently
-			// denies everything the user meant to allow. Fail fast instead.
-			return nil, fmt.Errorf("wildcard allowlist entries are not supported: %q (list each subdomain explicitly)", entry)
-		}
 		if ip := net.ParseIP(entry); ip != nil {
 			e.allowedIP[ip.String()] = ip // canonicalize to prevent representation mismatches
+			continue
+		}
+		// Strip an optional port suffix (e.g. "kayac.com:443" → "kayac.com",
+		// "203.0.113.10:443" → "203.0.113.10", "*.example.com:443" →
+		// "*.example.com"). Ports are not part of DNS names and field-cage
+		// does not enforce per-port policy.
+		host := entry
+		if h, _, err := net.SplitHostPort(entry); err == nil {
+			host = h
+		}
+		if host == "" {
+			// Malformed entry (e.g. ":443") — skip silently.
+			continue
+		}
+		if strings.Contains(host, "*") {
+			suffix, ok := strings.CutPrefix(host, "*.")
+			if !ok || strings.Contains(suffix, "*") {
+				// Only a single leading "*." label is supported. Matching a
+				// literal "*" anywhere else would be ambiguous, so reject
+				// rather than silently mis-scope the entry.
+				return nil, fmt.Errorf("unsupported wildcard allowlist entry %q: only a single leading \"*.\" is supported (e.g. \"*.example.com\")", entry)
+			}
+			labels := strings.Split(suffix, ".")
+			if len(labels) < 2 {
+				// "*.com" or "*.jp" would allowlist an entire TLD — refuse
+				// anything less specific than a second-level domain.
+				return nil, fmt.Errorf("wildcard allowlist entry %q is too broad: must anchor at least a second-level domain (e.g. \"*.example.com\", not a bare TLD)", entry)
+			}
+			if slices.Contains(labels, "") {
+				return nil, fmt.Errorf("wildcard allowlist entry %q has an empty domain label", entry)
+			}
+			// Store with the leading dot so matching is a single HasSuffix
+			// against the full ".example.com" separator — no length check or
+			// per-lookup string concatenation needed.
+			e.wildcards = append(e.wildcards, "."+strings.ToLower(suffix))
+			continue
+		}
+		// Re-parse: "203.0.113.10:443" strips to an IP and must go to
+		// allowedIP, not domains.
+		if ip := net.ParseIP(host); ip != nil {
+			e.allowedIP[ip.String()] = ip
+		} else if _, cidr, err := net.ParseCIDR(host); err == nil {
+			// CIDR range, IPv4 (e.g. "10.0.0.0/8") or IPv6 (e.g. "2001:db8::/32").
+			// net.ParseCIDR masks the address, so cidr.IP is the network address.
+			e.cidrs = append(e.cidrs, cidr)
 		} else {
-			// Strip an optional port suffix (e.g. "kayac.com:443" → "kayac.com",
-			// "203.0.113.10:443" → "203.0.113.10"). Ports are not part of DNS
-			// names and field-cage does not enforce per-port policy.
-			host := entry
-			if h, _, err := net.SplitHostPort(entry); err == nil {
-				host = h
-			}
-			if host == "" {
-				// Malformed entry (e.g. ":443") — skip silently.
-				continue
-			}
-			// Re-parse: "203.0.113.10:443" strips to an IP and must go to
-			// allowedIP, not domains.
-			if ip := net.ParseIP(host); ip != nil {
-				e.allowedIP[ip.String()] = ip
-			} else if _, cidr, err := net.ParseCIDR(host); err == nil {
-				// CIDR range, IPv4 (e.g. "10.0.0.0/8") or IPv6 (e.g. "2001:db8::/32").
-				// net.ParseCIDR masks the address, so cidr.IP is the network address.
-				e.cidrs = append(e.cidrs, cidr)
-			} else {
-				e.domains[strings.ToLower(host)] = struct{}{}
-			}
+			e.domains[strings.ToLower(host)] = struct{}{}
 		}
 	}
 	return e, nil
@@ -123,8 +149,12 @@ func (e *Engine) Mode() Mode { return e.mode }
 // are allowed on port 53.
 func (e *Engine) AllowAllDNS() bool { return e.allowAllDNS }
 
-// Domains returns the allowlisted domain names (lowercased). Used to seed the
-// enforcement map at startup by resolving each domain to its IP addresses.
+// Domains returns the exact-match allowlisted domain names (lowercased).
+// Wildcard entries are excluded: there is no concrete FQDN to resolve at
+// startup for "*.example.com", so they can only be enforced by live DNS
+// observation (see IsAllowedDomain), never startup seeding.
+// Used to seed the enforcement map at startup by resolving each domain to
+// its IP addresses.
 func (e *Engine) Domains() []string {
 	domains := make([]string, 0, len(e.domains))
 	for d := range e.domains {
@@ -153,21 +183,37 @@ func (e *Engine) CIDRs() []*net.IPNet {
 	return out
 }
 
-// IsAllowedDomain reports whether the given domain is on the allowlist.
-// Matching is exact and case-insensitive; wildcards are not supported.
+// IsAllowedDomain reports whether the given domain is on the allowlist,
+// either as an exact (case-insensitive) match or as a proper subdomain of a
+// "*.example.com"-style wildcard entry.
 func (e *Engine) IsAllowedDomain(domain string) bool {
 	if domain == "" {
 		return false
 	}
-	_, ok := e.domains[strings.ToLower(domain)]
-	return ok
+	d := strings.ToLower(domain)
+	if _, ok := e.domains[d]; ok {
+		return true
+	}
+	return e.matchesWildcard(d)
+}
+
+// matchesWildcard reports whether domain (already lowercased) is a proper
+// subdomain of any wildcard suffix. "example.com" itself does not match
+// "*.example.com" — it must also be listed exactly if it should be allowed.
+func (e *Engine) matchesWildcard(domain string) bool {
+	for _, suffix := range e.wildcards {
+		if strings.HasSuffix(domain, suffix) {
+			return true
+		}
+	}
+	return false
 }
 
 // Allow reports whether the given domain and IP are permitted by the policy.
-// Domain matching is exact and case-insensitive; wildcards are not supported.
-// CIDR containment is checked for both IPv4 and IPv6 addresses.
-// domain may be empty if DNS resolution has not occurred yet; in that case
-// only the IP is checked.
+// Domain matching is exact and case-insensitive, or a proper subdomain of a
+// wildcard entry (see IsAllowedDomain). CIDR containment is checked for both
+// IPv4 and IPv6 addresses. domain may be empty if DNS resolution has not
+// occurred yet; in that case only the IP is checked.
 func (e *Engine) Allow(domain string, ip net.IP) bool {
 	if ip != nil {
 		if _, ok := e.allowedIP[ip.String()]; ok {
@@ -180,9 +226,7 @@ func (e *Engine) Allow(domain string, ip net.IP) bool {
 		}
 	}
 	if domain != "" {
-		if _, ok := e.domains[strings.ToLower(domain)]; ok {
-			return true
-		}
+		return e.IsAllowedDomain(domain)
 	}
 	return false
 }
