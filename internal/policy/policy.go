@@ -110,6 +110,16 @@ func newEngine(cfg Config) (*Engine, error) {
 				// rather than silently mis-scope the entry.
 				return nil, fmt.Errorf("unsupported wildcard allowlist entry %q: only a single leading \"*.\" is supported (e.g. \"*.example.com\")", entry)
 			}
+			if strings.Contains(suffix, ":") {
+				// SplitHostPort didn't recognize a trailing ":port" above (it
+				// only succeeds for a single, well-formed "host:port" pair),
+				// so a ":" still present means malformed host:port syntax
+				// (e.g. "*.example.com:443:extra") rather than a legitimate
+				// DNS name — which never contains ":". Storing it as-is would
+				// silently allowlist nothing, since it can never match an
+				// observed domain. Fail fast instead.
+				return nil, fmt.Errorf("malformed wildcard allowlist entry %q: unexpected \":\" (invalid host:port syntax)", entry)
+			}
 			labels := strings.Split(suffix, ".")
 			if len(labels) < 2 {
 				// "*.com" or "*.jp" would allowlist an entire TLD — refuse
@@ -133,6 +143,14 @@ func newEngine(cfg Config) (*Engine, error) {
 			// CIDR range, IPv4 (e.g. "10.0.0.0/8") or IPv6 (e.g. "2001:db8::/32").
 			// net.ParseCIDR masks the address, so cidr.IP is the network address.
 			e.cidrs = append(e.cidrs, cidr)
+		} else if strings.Contains(host, ":") {
+			// Not an IP, CIDR, or (from the "*" check above) a wildcard, yet
+			// still contains ":" — SplitHostPort only strips a well-formed
+			// "host:port" pair, so this is malformed host:port syntax (e.g.
+			// "example.com::443"), not a real domain (which never contains
+			// ":"). Storing it as a literal domain string would silently
+			// allowlist nothing. Fail fast instead.
+			return nil, fmt.Errorf("malformed allowlist entry %q: unexpected \":\" (invalid host:port syntax)", entry)
 		} else {
 			e.domains[strings.ToLower(host)] = struct{}{}
 		}

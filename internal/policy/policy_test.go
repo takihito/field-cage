@@ -154,6 +154,20 @@ func TestMalformedPortOnlyEntry(t *testing.T) {
 	}
 }
 
+func TestMalformedHostPortRejected(t *testing.T) {
+	// An entry with a ":" that net.SplitHostPort can't parse as a single
+	// well-formed "host:port" pair (too many colons) falls through with the
+	// ":" still embedded. A DNS name never contains ":", so silently storing
+	// it as a literal domain/wildcard would allowlist nothing it can ever
+	// match. Loading must fail fast instead (see also TestWildcardEntryRejected).
+	for _, entry := range []string{"example.com::443", "*.example.com:443:extra", "a:b:c:d:e"} {
+		_, err := newEngine(Config{Mode: ModeBlock, Allowlist: []string{entry}})
+		if err == nil {
+			t.Errorf("newEngine with malformed host:port entry %q: expected error, got nil", entry)
+		}
+	}
+}
+
 func TestAllowAllDNSDefault(t *testing.T) {
 	// allow_all_dns defaults to false when unset.
 	e, err := newEngine(Config{Mode: ModeBlock, Allowlist: []string{"github.com"}})
