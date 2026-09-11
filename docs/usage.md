@@ -18,6 +18,7 @@ allowlist:
   - api.github.com
   - codeload.github.com
   - objects.githubusercontent.com
+  - "*.githubusercontent.com" # wildcard: matches any subdomain, not the bare domain itself
   - 1.2.3.4             # single IPv4 address
   - 2001:db8::1         # single IPv6 address
   - 10.0.0.0/8          # IPv4 CIDR subnet (private range)
@@ -25,7 +26,9 @@ allowlist:
   - 2001:db8::/32       # IPv6 CIDR subnet
 ```
 
-> **Note**: Wildcards (`*.github.com`) are not supported — an entry containing `*` is rejected when the policy is loaded. List each subdomain explicitly.
+> **Note**: Wildcards must be of the form `*.example.com` and anchor at least a second-level domain — `*.com` / `*.jp` (a bare TLD) are rejected when the policy is loaded, as are any other shapes (e.g. `api.*.com`, `*`). A wildcard matches proper subdomains only: `*.example.com` does not also allow `example.com` — list that separately if it must be reachable too. Wildcard entries can't be pre-resolved at startup (there's no single FQDN to look up); unlike an exact-match domain, they have no startup-seeding fallback and are enforced *only* once a matching domain's DNS response is observed on the wire — see "Block mode enforcement" below. This is a simple label-count check, not a public-suffix list, so `*.co.jp` or similar multi-label TLD-like suffixes are accepted even though they're registrable-suffix-like.
+>
+> **Caution with wildcards on multi-tenant zones**: a wildcard scoped to a domain where third parties can create their own subdomains (e.g. a generic `*.s3.amazonaws.com`, `*.github.io`, or `*.pages.dev`) lets anyone who controls a name under that zone get their IP added to the live allowlist — defeating the point of an allowlist. Scope wildcards to zones you or a trusted vendor fully control.
 >
 > **Strict keys**: Unknown keys are rejected when the policy is loaded, so a misspelled key (e.g. `mdoe:`) fails fast instead of silently falling back to defaults.
 >

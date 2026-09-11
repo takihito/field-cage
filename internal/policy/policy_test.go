@@ -154,6 +154,20 @@ func TestMalformedPortOnlyEntry(t *testing.T) {
 	}
 }
 
+func TestMalformedHostPortRejected(t *testing.T) {
+	// An entry with a ":" that net.SplitHostPort can't parse as a single
+	// well-formed "host:port" pair (too many colons) falls through with the
+	// ":" still embedded. A DNS name never contains ":", so silently storing
+	// it as a literal domain/wildcard would allowlist nothing it can ever
+	// match. Loading must fail fast instead (see also TestWildcardEntryRejected).
+	for _, entry := range []string{"example.com::443", "*.example.com:443:extra", "a:b:c:d:e"} {
+		_, err := newEngine(Config{Mode: ModeBlock, Allowlist: []string{entry}})
+		if err == nil {
+			t.Errorf("newEngine with malformed host:port entry %q: expected error, got nil", entry)
+		}
+	}
+}
+
 func TestAllowAllDNSDefault(t *testing.T) {
 	// allow_all_dns defaults to false when unset.
 	e, err := newEngine(Config{Mode: ModeBlock, Allowlist: []string{"github.com"}})
@@ -362,13 +376,73 @@ func TestModeUnspecified(t *testing.T) {
 }
 
 func TestWildcardEntryRejected(t *testing.T) {
-	// Matching is exact, so a wildcard entry would silently never match —
-	// dangerous in block mode. Loading must fail fast instead.
-	for _, entry := range []string{"*.github.com", "api.*.com", "*"} {
+	// "*.github.com" anchors at a second-level domain and is valid (see
+	// TestWildcardAllowlist). Anything less specific, or a "*" not in the
+	// leading "*." position, is rejected at load time to avoid silently
+	// allowlisting an entire TLD or a shape that can't be matched sanely.
+	for _, entry := range []string{"*.com", "*.jp", "api.*.com", "*", "*."} {
 		_, err := newEngine(Config{Mode: ModeBlock, Allowlist: []string{entry}})
 		if err == nil {
 			t.Errorf("newEngine with wildcard entry %q: expected error, got nil", entry)
 		}
+	}
+}
+
+func TestWildcardAllowlist(t *testing.T) {
+	e, err := newEngine(Config{
+		Mode:      ModeBlock,
+		Allowlist: []string{"*.example.com", "github.com"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		domain string
+		want   bool
+	}{
+		{"foo.example.com", true},
+		{"a.b.example.com", true},
+		{"FOO.EXAMPLE.COM", true}, // case-insensitive
+		// the wildcard does not cover the base domain itself
+		{"example.com", false},
+		// nor an unrelated domain that merely ends similarly
+		{"notexample.com", false},
+		{"example.com.evil.com", false},
+		// exact entries are unaffected by the presence of a wildcard
+		{"github.com", true},
+		{"sub.github.com", false},
+	}
+	for _, tc := range cases {
+		if got := e.IsAllowedDomain(tc.domain); got != tc.want {
+			t.Errorf("IsAllowedDomain(%q) = %v, want %v", tc.domain, got, tc.want)
+		}
+		if got := e.Allow(tc.domain, nil); got != tc.want {
+			t.Errorf("Allow(%q, nil) = %v, want %v", tc.domain, got, tc.want)
+		}
+	}
+
+	// Wildcard entries have no concrete FQDN to resolve at startup, so they
+	// must not appear in Domains().
+	for _, d := range e.Domains() {
+		if d == "*.example.com" || d == "example.com" {
+			t.Errorf("Domains() unexpectedly contains %q derived from a wildcard entry", d)
+		}
+	}
+}
+
+func TestWildcardWithPortSuffix(t *testing.T) {
+	// The port suffix must be stripped before the "*." check, the same as
+	// for plain domain entries (see TestDomainWithPortStripped).
+	e, err := newEngine(Config{
+		Mode:      ModeBlock,
+		Allowlist: []string{"*.example.com:443"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !e.IsAllowedDomain("foo.example.com") {
+		t.Error(`IsAllowedDomain("foo.example.com") = false, want true for wildcard entry "*.example.com:443"`)
 	}
 }
 

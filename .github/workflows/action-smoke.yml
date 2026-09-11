@@ -121,12 +121,16 @@ jobs:
           mode: block
           allow: |
             github.com
-            api.github.com
+            *.github.com
           log-file: /tmp/field-cage-block.log
 
       - name: Generate outbound traffic (allowed and denied)
         run: |
           curl -4 -s https://github.com -o /dev/null
+          # api.github.com is not listed as an exact entry above — this only
+          # succeeds if the "*.github.com" wildcard entry is actually
+          # enforced via live DNS observation (see docs/usage.md).
+          curl -4 -s https://api.github.com -o /dev/null
           # Not on the allowlist: expected to fail with a connection error
           # (block mode denies synchronously, it does not hang).
           if curl -4 -s --max-time 5 https://example.com -o /dev/null; then

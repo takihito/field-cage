@@ -22,7 +22,7 @@ field-cage hooks into the Linux kernel via eBPF to observe every outbound connec
 ## Features
 
 - Automatic IP-to-domain mapping via DNS packet monitoring (A and AAAA records)
-- YAML policy: exact domain and IP matching (case-insensitive), IPv4 and IPv6
+- YAML policy: exact or `*.example.com`-style wildcard domain matching (case-insensitive), IP matching, IPv4 and IPv6
 - CIDR subnet matching (e.g. `10.0.0.0/8`, `203.0.113.0/24`, `2001:db8::/32`)
 - Dual-stack aware: IPv4-mapped IPv6 connections (`::ffff:a.b.c.d`, used by Node.js/Java dual-stack sockets) are enforced against the IPv4 allowlist
 - Zero dependency on Node.js / `node_modules` — single fully-static Go binary
