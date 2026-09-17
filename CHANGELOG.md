@@ -2,6 +2,12 @@
 
 Release notes are maintained automatically by [tagpr](https://github.com/Songmu/tagpr).
 
+## [v0.1.6](https://github.com/takihito/field-cage/compare/v0.1.5...v0.1.6) - 2026-09-17
+
+- block モードの allowlist に SLD アンカー付きワイルドカードを追加 by @takihito in https://github.com/takihito/field-cage/pull/114
+- build(deps): Bump golang.org/x/net from 0.58.0 to 0.59.0 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/116
+- build(deps): Bump the codeql-action group with 3 updates by @dependabot[bot] in https://github.com/takihito/field-cage/pull/117
+
 ## [v0.1.5](https://github.com/takihito/field-cage/compare/v0.1.4...v0.1.5) - 2026-09-09
 
 - build(deps): Bump Songmu/tagpr from 1.20.1 to 1.20.2 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/108
