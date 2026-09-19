@@ -17,17 +17,20 @@ import (
 // Watcher attaches to the sys_enter_connect and sys_exit_connect tracepoints
 // and streams Events. It also runs a DNS cache that annotates events with
 // resolved domain names. When blockObjs is non-nil, AllowIP populates the
-// allowlist enforced by the cgroup/connect4 program (default-deny).
+// allowlist enforced by the cgroup/connect4 and cgroup/sendmsg4 programs
+// (default-deny).
 type Watcher struct {
-	objs        ConnectObjects
-	tp          link.Link // sys_enter_connect
-	tpExit      link.Link // sys_exit_connect
-	reader      *ringbuf.Reader
-	dnsCache    *DNSCache
-	dnsWatcher  *dnsWatcher
-	blockObjs   *BlockObjects
-	cgroupLink  link.Link // cgroup/connect4
-	cgroupLink6 link.Link // cgroup/connect6
+	objs            ConnectObjects
+	tp              link.Link // sys_enter_connect
+	tpExit          link.Link // sys_exit_connect
+	reader          *ringbuf.Reader
+	dnsCache        *DNSCache
+	dnsWatcher      *dnsWatcher
+	blockObjs       *BlockObjects
+	cgroupLink      link.Link // cgroup/connect4
+	cgroupLink6     link.Link // cgroup/connect6
+	cgroupLinkSend  link.Link // cgroup/sendmsg4
+	cgroupLinkSend6 link.Link // cgroup/sendmsg6
 
 	// malformed counts ring buffer records dropped by Read because they failed
 	// to parse. Only touched from Read, which is called from a single
@@ -41,10 +44,15 @@ func NewWatcher() (*Watcher, error) {
 	return newWatcher("", nil, nil)
 }
 
-// NewBlockWatcher is like NewWatcher but also loads the cgroup/connect4 and
-// cgroup/connect6 enforcement programs, which deny every outbound connection
-// by default (allowlist model). Use AllowIP to seed the permitted-IP set;
-// observed DNS responses for domains accepted by isAllowedDomain are added
+// NewBlockWatcher is like NewWatcher but also loads the cgroup/connect4,
+// cgroup/connect6, cgroup/sendmsg4, and cgroup/sendmsg6 enforcement programs,
+// which deny every outbound connection or datagram by default (allowlist
+// model). The sendmsg4/sendmsg6 programs are required in addition to
+// connect4/connect6: a UDP socket that never calls connect() and instead
+// calls sendto()/sendmsg() directly reaches the kernel via a different
+// attach point, so connect4/connect6 alone would let unconnected UDP bypass
+// enforcement entirely. Use AllowIP to seed the permitted-IP set; observed
+// DNS responses for domains accepted by isAllowedDomain are added
 // automatically.
 // cgroupPath is the path to a writable cgroup v2 directory
 // (e.g. "/sys/fs/cgroup"). isAllowedDomain reports whether a resolved domain is
@@ -111,8 +119,10 @@ func newWatcher(cgroupPath string, isAllowedDomain func(string) bool, resolvers 
 			return nil, fmt.Errorf("attach block program: %w", err)
 		}
 		cleanups = append(cleanups, func() {
-			w.cgroupLink6.Close() //nolint:errcheck
-			w.cgroupLink.Close()  //nolint:errcheck
+			w.cgroupLinkSend6.Close() //nolint:errcheck
+			w.cgroupLinkSend.Close()  //nolint:errcheck
+			w.cgroupLink6.Close()     //nolint:errcheck
+			w.cgroupLink.Close()      //nolint:errcheck
 			w.blockObjs.Close()
 		})
 		// Seed trusted resolver IPs so DNS (port 53) is permitted to them under
@@ -152,9 +162,13 @@ func newWatcher(cgroupPath string, isAllowedDomain func(string) bool, resolvers 
 	return w, nil
 }
 
-// attachBlock loads the cgroup/connect4 and cgroup/connect6 eBPF programs and
-// attaches them to the given cgroup path so they can block unauthorized
-// connections system-wide for both address families.
+// attachBlock loads the cgroup/connect4, cgroup/connect6, cgroup/sendmsg4,
+// and cgroup/sendmsg6 eBPF programs and attaches them to the given cgroup
+// path so they can block unauthorized connections and datagrams system-wide
+// for both address families. All four must be attached: connect4/connect6
+// alone would leave a UDP socket that skips connect() and calls
+// sendto()/sendmsg() directly (a different kernel attach point) completely
+// unenforced.
 func (w *Watcher) attachBlock(cgroupPath string) error {
 	var blockObjs BlockObjects
 	if err := LoadBlockObjects(&blockObjs, nil); err != nil {
@@ -182,9 +196,36 @@ func (w *Watcher) attachBlock(cgroupPath string) error {
 		return fmt.Errorf("attach cgroup/connect6: %w", err)
 	}
 
+	cgSend, err := link.AttachCgroup(link.CgroupOptions{
+		Path:    cgroupPath,
+		Attach:  ciliumebpf.AttachCGroupUDP4Sendmsg,
+		Program: blockObjs.BlockSendmsg,
+	})
+	if err != nil {
+		cg6.Close() //nolint:errcheck
+		cg.Close()  //nolint:errcheck
+		blockObjs.Close()
+		return fmt.Errorf("attach cgroup/sendmsg4: %w", err)
+	}
+
+	cgSend6, err := link.AttachCgroup(link.CgroupOptions{
+		Path:    cgroupPath,
+		Attach:  ciliumebpf.AttachCGroupUDP6Sendmsg,
+		Program: blockObjs.BlockSendmsg6,
+	})
+	if err != nil {
+		cgSend.Close() //nolint:errcheck
+		cg6.Close()    //nolint:errcheck
+		cg.Close()     //nolint:errcheck
+		blockObjs.Close()
+		return fmt.Errorf("attach cgroup/sendmsg6: %w", err)
+	}
+
 	w.blockObjs = &blockObjs
 	w.cgroupLink = cg
 	w.cgroupLink6 = cg6
+	w.cgroupLinkSend = cgSend
+	w.cgroupLinkSend6 = cgSend6
 	return nil
 }
 
@@ -379,6 +420,16 @@ func (w *Watcher) Close() error {
 	if w.dnsWatcher != nil {
 		if err := w.dnsWatcher.Close(); err != nil {
 			errs = append(errs, err)
+		}
+	}
+	if w.cgroupLinkSend6 != nil {
+		if err := w.cgroupLinkSend6.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("cgroup link (sendmsg6): %w", err))
+		}
+	}
+	if w.cgroupLinkSend != nil {
+		if err := w.cgroupLinkSend.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("cgroup link (sendmsg4): %w", err))
 		}
 	}
 	if w.cgroupLink6 != nil {

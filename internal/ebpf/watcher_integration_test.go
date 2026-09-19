@@ -168,6 +168,108 @@ func TestBlockWatcherDefaultDeny(t *testing.T) {
 	}
 }
 
+// TestBlockWatcherDeniesUnconnectedUDP verifies that a UDP socket which never
+// calls connect() — and instead sends via WriteTo (sendto()/sendmsg()) — is
+// still subject to default-deny. This is the specific gap that connect4/
+// connect6 alone leave open: a datagram socket reaches the kernel through
+// BPF_CGROUP_UDP4_SENDMSG rather than BPF_CGROUP_INET4_CONNECT, so without
+// cgroup/sendmsg4 attached, this traffic would silently bypass enforcement.
+// Requires the same privileges as TestBlockWatcherDefaultDeny.
+func TestBlockWatcherDeniesUnconnectedUDP(t *testing.T) {
+	cgroupPath := setupTestCgroup(t)
+	denyAll := func(string) bool { return false }
+	w, err := ebpf.NewBlockWatcher(cgroupPath, denyAll, nil)
+	if err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			t.Skipf("skipping: insufficient privileges (needs CAP_BPF/CAP_NET_RAW/root): %v", err)
+		}
+		t.Fatalf("NewBlockWatcher: %v", err)
+	}
+	defer w.Close()
+
+	pc, err := net.ListenPacket("udp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("ListenPacket: %v", err)
+	}
+	defer pc.Close()
+
+	// TEST-NET-1 (RFC 5737): guaranteed non-routable and non-loopback.
+	addr, err := net.ResolveUDPAddr("udp4", "192.0.2.1:80")
+	if err != nil {
+		t.Fatalf("ResolveUDPAddr: %v", err)
+	}
+
+	// Default-deny: WriteTo never calls connect(), so this exercises
+	// cgroup/sendmsg4 specifically, not cgroup/connect4.
+	_, err = pc.WriteTo([]byte("probe"), addr)
+	if err == nil {
+		t.Fatalf("expected sendto to %s to be denied, but it succeeded", addr)
+	}
+	if !errors.Is(err, syscall.EPERM) {
+		t.Fatalf("expected EPERM for denied sendto to %s, got: %v", addr, err)
+	}
+
+	// After allowing the IP, sendmsg is no longer rejected by policy.
+	if err := w.AllowIP(net.ParseIP("192.0.2.1")); err != nil {
+		t.Fatalf("AllowIP: %v", err)
+	}
+	_, err = pc.WriteTo([]byte("probe"), addr)
+	if errors.Is(err, syscall.EPERM) {
+		t.Fatalf("after AllowIP, sendto to %s should not be EPERM, got: %v", addr, err)
+	}
+}
+
+// TestBlockWatcherDeniesUnconnectedUDPIPv6 is the IPv6 counterpart of
+// TestBlockWatcherDeniesUnconnectedUDP: it exercises cgroup/sendmsg6
+// specifically (WriteTo never calls connect()), since sendmsg6 is a
+// separately attached program from sendmsg4 and a bug in its program/attach
+// type or in check_ipv6's handling of the sendmsg context could leave
+// unconnected IPv6 UDP unenforced even though the IPv4 path is covered.
+// Skipped when the environment has no IPv6 support.
+func TestBlockWatcherDeniesUnconnectedUDPIPv6(t *testing.T) {
+	cgroupPath := setupTestCgroup(t)
+	denyAll := func(string) bool { return false }
+	w, err := ebpf.NewBlockWatcher(cgroupPath, denyAll, nil)
+	if err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			t.Skipf("skipping: insufficient privileges (needs CAP_BPF/CAP_NET_RAW/root): %v", err)
+		}
+		t.Fatalf("NewBlockWatcher: %v", err)
+	}
+	defer w.Close()
+
+	pc, err := net.ListenPacket("udp6", "[::1]:0")
+	if err != nil {
+		t.Skipf("skipping: IPv6 unavailable: %v", err)
+	}
+	defer pc.Close()
+
+	// 2001:db8::/32 (RFC 3849 documentation range): guaranteed non-routable.
+	addr, err := net.ResolveUDPAddr("udp6", "[2001:db8::1]:80")
+	if err != nil {
+		t.Fatalf("ResolveUDPAddr: %v", err)
+	}
+
+	// Default-deny: WriteTo never calls connect(), so this exercises
+	// cgroup/sendmsg6 specifically, not cgroup/connect6.
+	_, err = pc.WriteTo([]byte("probe"), addr)
+	if err == nil {
+		t.Fatalf("expected sendto to %s to be denied, but it succeeded", addr)
+	}
+	if !errors.Is(err, syscall.EPERM) {
+		t.Fatalf("expected EPERM for denied sendto to %s, got: %v", addr, err)
+	}
+
+	// After allowing the IP, sendmsg is no longer rejected by policy.
+	if err := w.AllowIP(net.ParseIP("2001:db8::1")); err != nil {
+		t.Fatalf("AllowIP: %v", err)
+	}
+	_, err = pc.WriteTo([]byte("probe"), addr)
+	if errors.Is(err, syscall.EPERM) {
+		t.Fatalf("after AllowIP, sendto to %s should not be EPERM, got: %v", addr, err)
+	}
+}
+
 // TestBlockWatcherAllowCIDR verifies that AllowCIDR seeds the LPM trie with a
 // subnet prefix: a host address inside the CIDR must no longer be denied by
 // default-deny after the CIDR is seeded.
