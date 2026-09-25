@@ -1,12 +1,20 @@
-// eBPF cgroup/connect4 + connect6 programs for field-cage enforcement mode.
-// Default-deny allowlist model: a connection is rejected with EPERM unless its
-// destination is explicitly permitted. Loopback is always allowed. DNS
-// (port 53) is additionally permitted to trusted resolvers (seeded from
-// /etc/resolv.conf) so that name resolution works without turning port 53
-// into a general outbound tunnel to arbitrary hosts; this can be relaxed to
-// "allow any port-53 destination" via the config map (opt-in, default off).
-// Any destination in the allowed_ips / allowed_ips6 maps is reachable on any
-// port, including 53; everything else is denied.
+// eBPF cgroup/connect4+connect6 and cgroup/sendmsg4+sendmsg6 programs for
+// field-cage enforcement mode.
+// Default-deny allowlist model: a connection (or, for a datagram socket that
+// never called connect(), each individual sendmsg()) is rejected with EPERM
+// unless its destination is explicitly permitted. connect() alone does not
+// cover UDP: a process that skips connect() and calls sendto()/sendmsg()
+// directly reaches the kernel via a different hook
+// (BPF_CGROUP_UDP4_SENDMSG/BPF_CGROUP_UDP6_SENDMSG, not
+// BPF_CGROUP_INET4_CONNECT/BPF_CGROUP_INET6_CONNECT), so both must be
+// attached or unconnected UDP silently bypasses enforcement entirely.
+// Loopback is always allowed. DNS (port 53) is additionally permitted to
+// trusted resolvers (seeded from /etc/resolv.conf) so that name resolution
+// works without turning port 53 into a general outbound tunnel to arbitrary
+// hosts; this can be relaxed to "allow any port-53 destination" via the
+// config map (opt-in, default off). Any destination in the allowed_ips /
+// allowed_ips6 maps is reachable on any port, including 53; everything else
+// is denied.
 #include <linux/bpf.h>
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_endian.h>
@@ -130,14 +138,10 @@ static __always_inline int check_ipv4(__u32 daddr, __u16 dport)
 	return 0;
 }
 
-SEC("cgroup/connect4")
-int block_connect(struct bpf_sock_addr *ctx)
-{
-	return check_ipv4(ctx->user_ip4, ctx->user_port);
-}
-
-SEC("cgroup/connect6")
-int block_connect6(struct bpf_sock_addr *ctx)
+// check_ipv6 applies the IPv6 default-deny policy to a bpf_sock_addr context.
+// Shared by cgroup/connect6 and cgroup/sendmsg6 so the two cannot drift, the
+// same way check_ipv4 is shared by cgroup/connect4 and cgroup/sendmsg4.
+static __always_inline int check_ipv6(struct bpf_sock_addr *ctx)
 {
 	// user_ip6 holds the destination as four 32-bit words in network byte
 	// order; copying them in sequence yields the 16 raw wire-order bytes.
@@ -151,10 +155,10 @@ int block_connect6(struct bpf_sock_addr *ctx)
 		return 1; // allow
 
 	// IPv4-mapped IPv6 (::ffff:a.b.c.d): dual-stack sockets (common in Node.js
-	// and Java) reach IPv4 destinations through connect6. Apply the same policy
-	// as connect4 by consulting the IPv4 maps (via check_ipv4), so an IPv4
-	// allowlist / resolver entry works regardless of which socket family the
-	// application used.
+	// and Java) reach IPv4 destinations through connect6/sendmsg6. Apply the
+	// same policy as the IPv4 hooks by consulting the IPv4 maps (via
+	// check_ipv4), so an IPv4 allowlist / resolver entry works regardless of
+	// which socket family the application used.
 	if (a0 == 0 && a1 == 0 && a2 == bpf_htonl(0x0000ffff))
 		return check_ipv4(a3, ctx->user_port);
 
@@ -188,8 +192,42 @@ int block_connect6(struct bpf_sock_addr *ctx)
 	if (bpf_map_lookup_elem(&allowed_ips6, &key))
 		return 1; // allow: destination matches an allowlisted prefix
 
-	// Default deny (EPERM), same as block_connect.
+	// Default deny: returning 0 causes the kernel to fail the connect() or
+	// sendmsg() syscall with EPERM.
 	return 0;
+}
+
+SEC("cgroup/connect4")
+int block_connect(struct bpf_sock_addr *ctx)
+{
+	return check_ipv4(ctx->user_ip4, ctx->user_port);
+}
+
+SEC("cgroup/connect6")
+int block_connect6(struct bpf_sock_addr *ctx)
+{
+	return check_ipv6(ctx);
+}
+
+// cgroup/sendmsg4 and cgroup/sendmsg6 close the UDP gap left by connect4/
+// connect6 alone: a datagram socket that never calls connect() and instead
+// calls sendto()/sendmsg() directly reaches the kernel via
+// BPF_CGROUP_UDP4_SENDMSG/BPF_CGROUP_UDP6_SENDMSG, a separate attach point
+// from BPF_CGROUP_INET4_CONNECT/BPF_CGROUP_INET6_CONNECT. Without these,
+// unconnected UDP bypasses enforcement entirely regardless of the allowlist.
+// The context shape (struct bpf_sock_addr) and field semantics
+// (user_ip4/user_ip6/user_port) are identical to the connect hooks, so the
+// same check_ipv4/check_ipv6 policy applies verbatim.
+SEC("cgroup/sendmsg4")
+int block_sendmsg(struct bpf_sock_addr *ctx)
+{
+	return check_ipv4(ctx->user_ip4, ctx->user_port);
+}
+
+SEC("cgroup/sendmsg6")
+int block_sendmsg6(struct bpf_sock_addr *ctx)
+{
+	return check_ipv6(ctx);
 }
 
 char LICENSE[] SEC("license") = "GPL";

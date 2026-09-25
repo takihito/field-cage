@@ -222,7 +222,7 @@ make setup-hooks
 
 ## Block モードの遮断モデル
 
-Block モードは **デフォルト拒否（default-deny）** です。`cgroup/connect4` および `cgroup/connect6` プログラムは、宛先 IP が allowlist に無い全アウトバウンド IPv4/IPv6 接続を拒否します。IPv4-mapped IPv6 宛先（`::ffff:a.b.c.d`、Node.js や Java などのデュアルスタックランタイムが IPv4 ホストへ接続する際の経路）は IPv4 allowlist と照合されるため、IPv4 エントリ 1 つで両方のソケットファミリーをカバーします。allowlist は次の方法で構築されます。
+Block モードは **デフォルト拒否（default-deny）** です。`cgroup/connect4` および `cgroup/connect6` プログラムは、宛先 IP が allowlist に無い全アウトバウンド IPv4/IPv6 接続を拒否します。UDP はデータグラムソケットが取り得る2つの経路の両方に同じポリシーが適用されます: `connect()` を呼ぶソケットは `cgroup/connect4`/`connect6` が、`connect()` を一切呼ばず直接 `sendto()`/`sendmsg()` するソケットは `cgroup/sendmsg4`/`sendmsg6` が扱います。後者は `connect4`/`connect6` だけでは検知できない別のカーネルアタッチポイントのため、両方を強制しないと connect しない UDP が allowlist を素通りしてしまいます。IPv4-mapped IPv6 宛先（`::ffff:a.b.c.d`、Node.js や Java などのデュアルスタックランタイムが IPv4 ホストへ接続する際の経路）は IPv4 allowlist と照合されるため、IPv4 エントリ 1 つで両方のソケットファミリーをカバーします。allowlist は次の方法で構築されます。
 
 1. **起動時シード** — 明示的な IP / CIDR エントリを直接追加し、allowlist の各ドメインを解決（A / AAAA）してそのアドレスを追加。
 2. **DNS のライブ観測** — allowlist 対象ドメインの DNS 応答を wire 上で観測した時点で、その A / AAAA レコード IP をアプリの接続より先に allowlist へ追加。ただし信用するのは、設定済みリゾルバ（`/etc/resolv.conf` の `nameserver`）またはループバックを送信元とする応答のみ。それ以外の送信元の応答はログ用にキャッシュするだけで allowlist には追加しないため、送信元ポート53を偽装した偽造応答による allowlist ポイズニングを防ぎます。
@@ -236,6 +236,7 @@ Block モードは **デフォルト拒否（default-deny）** です。`cgroup/
 - **ライブ allowlist 登録はリゾルバ送信元の応答のみ信用**: allowlist を拡張するのは設定済みリゾルバまたはループバック発の DNS 応答だけです。信用される応答を偽造するには送信元ポート53のバインド（`CAP_NET_BIND_SERVICE`）か raw ソケット（`CAP_NET_RAW`）が必要で、通常のビルドステップは保持していません。これらを既に持つ攻撃者は別の手段でも遮断を無効化できます。
 - **ライブ観測は IPv4 トランスポート上の平文 UDP DNS（port 53）のみ**: IPv6 トランスポート・TCP・暗号化（DoH/DoT）の DNS は観測できないため allowlist を拡張できません。これは A / AAAA 両レコードに当てはまります（クエリが IPv4 トランスポートを通る一般的なケースでは AAAA 応答も観測**されます**）。観測できないチャネルで解決されるドメインは起動時シードのみが対象となり、起動後に IP がローテーションすると新しい IP を block モードが拒否します（fail-closed）。該当ドメインはポリシーで IP 固定するか、IPv4 上の平文 UDP で解決されるようにしてください。
 - **DNS パケット監視に `CAP_NET_RAW` が必要**: Block モードでは DNS パケット監視が起動できない場合はエラー終了します（fail-closed）。Audit モードではベストエフォートで動作します。
+- **connect しない UDP は、両モードとも監視からは不可視で、遮断されるのは block モードのみ**: 監視は現状 connect tracepoint ベースのみのため、一度も `connect()` しない `sendto()`/`sendmsg()` は verdict ログに一切出力されません。Audit モードではこれは「遮断されないだけ」ではなく、その通信自体がまるごと見えないことを意味します。Block モードでは `cgroup/sendmsg4`/`sendmsg6` プログラム（上記「Block モードの遮断モデル」参照）がログには出ないままでも allowlist を適用し続けるため、enforcement と可視性が非対称になるのは block モードに限った話です: 遮断・許可のいずれであっても、ログには現れないまま実際には遮断・許可が行われます。
 
 ## アーキテクチャ
 
@@ -248,10 +249,11 @@ Block モードは **デフォルト拒否（default-deny）** です。`cgroup/
 │  socket_filter (port 53)                    │
 │    → DNS 応答を ring buffer へ              │
 │                                             │
-│  cgroup/connect4 + connect6 (Block モード)   │
-│    → default-deny。ループバック・信頼リゾルバ │
-│      への port 53・allowed_ips /             │
-│      allowed_ips6 LPM trie の IP を許可      │
+│  cgroup/connect{4,6} + sendmsg{4,6}         │
+│    (Block モード) → default-deny。          │
+│      ループバック・信頼リゾルバへの port 53・ │
+│      allowed_ips / allowed_ips6 LPM trie の  │
+│      IP を許可                               │
 └─────────────────────────────────────────────┘
                      ↕ cilium/ebpf
 ┌─────────────────────────────────────────────┐
