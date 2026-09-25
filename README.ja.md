@@ -236,7 +236,7 @@ Block モードは **デフォルト拒否（default-deny）** です。`cgroup/
 - **ライブ allowlist 登録はリゾルバ送信元の応答のみ信用**: allowlist を拡張するのは設定済みリゾルバまたはループバック発の DNS 応答だけです。信用される応答を偽造するには送信元ポート53のバインド（`CAP_NET_BIND_SERVICE`）か raw ソケット（`CAP_NET_RAW`）が必要で、通常のビルドステップは保持していません。これらを既に持つ攻撃者は別の手段でも遮断を無効化できます。
 - **ライブ観測は IPv4 トランスポート上の平文 UDP DNS（port 53）のみ**: IPv6 トランスポート・TCP・暗号化（DoH/DoT）の DNS は観測できないため allowlist を拡張できません。これは A / AAAA 両レコードに当てはまります（クエリが IPv4 トランスポートを通る一般的なケースでは AAAA 応答も観測**されます**）。観測できないチャネルで解決されるドメインは起動時シードのみが対象となり、起動後に IP がローテーションすると新しい IP を block モードが拒否します（fail-closed）。該当ドメインはポリシーで IP 固定するか、IPv4 上の平文 UDP で解決されるようにしてください。
 - **DNS パケット監視に `CAP_NET_RAW` が必要**: Block モードでは DNS パケット監視が起動できない場合はエラー終了します（fail-closed）。Audit モードではベストエフォートで動作します。
-- **connect しない UDP は遮断されるが、まだログには出ない**: Block モードでは UDP ソケットが `connect()` を呼ぶか、`connect()` せず直接 `sendto()`/`sendmsg()` するかにかかわらず同じ allowlist が適用されます（上記「Block モードの遮断モデル」参照）。一方で監視は現状 connect tracepoint ベースのみのため、一度も `connect()` しない `sendto()`/`sendmsg()` の許可・拒否は Audit モードであっても verdict ログに出力されません。この経路については enforcement と可視性がまだ非対称です。
+- **connect しない UDP は、両モードとも監視からは不可視で、遮断されるのは block モードのみ**: 監視は現状 connect tracepoint ベースのみのため、一度も `connect()` しない `sendto()`/`sendmsg()` は verdict ログに一切出力されません。Audit モードではこれは「遮断されないだけ」ではなく、その通信自体がまるごと見えないことを意味します。Block モードでは `cgroup/sendmsg4`/`sendmsg6` プログラム（上記「Block モードの遮断モデル」参照）がログには出ないままでも allowlist を適用し続けるため、enforcement と可視性が非対称になるのは block モードに限った話です: 遮断・許可のいずれであっても、ログには現れないまま実際には遮断・許可が行われます。
 
 ## アーキテクチャ
 
