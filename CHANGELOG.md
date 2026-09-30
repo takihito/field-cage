@@ -2,6 +2,13 @@
 
 Release notes are maintained automatically by [tagpr](https://github.com/Songmu/tagpr).
 
+## [v0.1.7](https://github.com/takihito/field-cage/compare/v0.1.6...v0.1.7) - 2026-09-30
+
+- block モードで非接続 UDP (sendto/sendmsg) を遮断する by @takihito in https://github.com/takihito/field-cage/pull/118
+- build(deps): Bump the codeql-action group with 3 updates by @dependabot[bot] in https://github.com/takihito/field-cage/pull/119
+- build(deps): Bump the codeql-action group with 3 updates by @dependabot[bot] in https://github.com/takihito/field-cage/pull/121
+- build(deps): Bump Songmu/tagpr from 1.20.3 to 1.21.0 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/122
+
 ## [v0.1.6](https://github.com/takihito/field-cage/compare/v0.1.5...v0.1.6) - 2026-09-17
 
 - block モードの allowlist に SLD アンカー付きワイルドカードを追加 by @takihito in https://github.com/takihito/field-cage/pull/114
