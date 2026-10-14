@@ -9,6 +9,6 @@ require (
 	// instead of a hand-rolled one. Pinned to the same version as the other
 	// golang.org/x modules already in the graph.
 	golang.org/x/net v0.59.0
-	golang.org/x/sys v0.48.0
+	golang.org/x/sys v0.49.0
 	gopkg.in/yaml.v3 v3.0.1
 )
