@@ -2,6 +2,28 @@
 
 Release notes are maintained automatically by [tagpr](https://github.com/Songmu/tagpr).
 
+## [v0.1.7](https://github.com/takihito/field-cage/compare/v0.1.6...v0.1.7) - 2026-11-16
+
+- block モードで非接続 UDP (sendto/sendmsg) を遮断する by @takihito in https://github.com/takihito/field-cage/pull/118
+- build(deps): Bump the codeql-action group with 3 updates by @dependabot[bot] in https://github.com/takihito/field-cage/pull/119
+- build(deps): Bump the codeql-action group with 3 updates by @dependabot[bot] in https://github.com/takihito/field-cage/pull/121
+- build(deps): Bump Songmu/tagpr from 1.20.3 to 1.21.0 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/122
+- build(deps): Bump Songmu/tagpr from 1.21.0 to 1.21.1 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/123
+- build(deps): Bump golang.org/x/sys from 0.48.0 to 0.49.0 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/124
+- build(deps): Bump step-security/harden-runner from 2.21.1 to 2.22.1 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/126
+- build(deps): Bump ossf/scorecard-action from 2.4.4 to 2.5.0 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/127
+- build(deps): Bump the codeql-action group across 1 directory with 3 updates by @dependabot[bot] in https://github.com/takihito/field-cage/pull/128
+- build(deps): Bump actions/upload-artifact from 7.0.1 to 7.0.2 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/129
+- build(deps): Bump Songmu/tagpr from 1.21.1 to 1.21.2 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/130
+- fix(ebpf): pass verifier with clang 21 and avoid nil deref on block-mode cleanup by @takihito in https://github.com/takihito/field-cage/pull/138
+- build(deps): Bump golang.org/x/net from 0.59.0 to 0.62.0 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/131
+- build(deps): Bump golang.org/x/sys from 0.49.0 to 0.50.0 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/132
+- build(deps): Bump the codeql-action group across 1 directory with 3 updates by @dependabot[bot] in https://github.com/takihito/field-cage/pull/133
+- build(deps): Bump Songmu/tagpr from 1.21.2 to 1.22.0 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/134
+- build(deps): Bump sigstore/cosign-installer from 4.1.2 to 4.1.3 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/135
+- build(deps): Bump goreleaser/goreleaser-action from 7.2.3 to 7.3.0 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/136
+- build(deps): Bump step-security/harden-runner from 2.22.1 to 2.22.4 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/137
+
 ## [v0.1.6](https://github.com/takihito/field-cage/compare/v0.1.5...v0.1.6) - 2026-09-17
 
 - block モードの allowlist に SLD アンカー付きワイルドカードを追加 by @takihito in https://github.com/takihito/field-cage/pull/114
