@@ -85,8 +85,26 @@ int capture_dns(struct __sk_buff *skb)
 	 * 512-byte BPF stack limit. */
 	__builtin_memset(ev->payload, 0, DNS_MAX_LEN);
 
+	/* Re-derive the copy length immediately before the helper call so the
+	 * verifier can prove it lies in [1, DNS_MAX_LEN] by arithmetic alone.
+	 * The earlier `dns_len == 0` early return is not enough on its own:
+	 * clang 21 (Ubuntu 26.04) schedules the code so that the register passed
+	 * as R4 no longer carries the branch-refined lower bound, and the
+	 * verifier rejects the load with "R4 invalid zero-sized read:
+	 * u64=[0,511]" (clang tests `udp_len & 0x1ff == 8` on a different
+	 * register than the one it later passes as R4, so the verifier never
+	 * links the two). ((x - 1) & (N - 1)) + 1 has range [1, N] for any x,
+	 * and is the identity for the x in [1, DNS_MAX_LEN - 1] reachable here,
+	 * so the copied bytes are unchanged.
+	 * The empty asm must come BEFORE the arithmetic: it hides dns_len's
+	 * known range from clang, which would otherwise prove the expression
+	 * equals dns_len and fold it away. It emits no instructions. */
+	__u32 copy_len = dns_len;
+	asm volatile("" : "+r"(copy_len));
+	copy_len = ((copy_len - 1) & (DNS_MAX_LEN - 1)) + 1;
+
 	__u32 dns_offset = ETH_HLEN + ihl + 8;
-	if (bpf_skb_load_bytes(skb, dns_offset, ev->payload, dns_len) != 0) {
+	if (bpf_skb_load_bytes(skb, dns_offset, ev->payload, copy_len) != 0) {
 		bpf_ringbuf_discard(ev, 0);
 		return 0;
 	}

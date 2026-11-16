@@ -118,12 +118,17 @@ func newWatcher(cgroupPath string, isAllowedDomain func(string) bool, resolvers 
 		if err := w.attachBlock(cgroupPath); err != nil {
 			return nil, fmt.Errorf("attach block program: %w", err)
 		}
+		// Capture a local copy: w is a named return value, so every
+		// `return nil, err` below sets it to nil before this deferred cleanup
+		// runs. Closing over w directly would nil-dereference and turn the
+		// real error into a panic.
+		bw := w
 		cleanups = append(cleanups, func() {
-			w.cgroupLinkSend6.Close() //nolint:errcheck
-			w.cgroupLinkSend.Close()  //nolint:errcheck
-			w.cgroupLink6.Close()     //nolint:errcheck
-			w.cgroupLink.Close()      //nolint:errcheck
-			w.blockObjs.Close()
+			bw.cgroupLinkSend6.Close() //nolint:errcheck
+			bw.cgroupLinkSend.Close()  //nolint:errcheck
+			bw.cgroupLink6.Close()     //nolint:errcheck
+			bw.cgroupLink.Close()      //nolint:errcheck
+			bw.blockObjs.Close()
 		})
 		// Seed trusted resolver IPs so DNS (port 53) is permitted to them under
 		// default-deny. Loopback resolvers are already covered by the loopback
