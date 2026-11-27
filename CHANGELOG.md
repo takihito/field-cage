@@ -2,6 +2,10 @@
 
 Release notes are maintained automatically by [tagpr](https://github.com/Songmu/tagpr).
 
+## [v0.1.8](https://github.com/takihito/field-cage/compare/v0.1.7...v0.1.8) - 2026-11-27
+
+- build(deps): Bump golang.org/x/net from 0.62.0 to 0.63.0 by @dependabot[bot] in https://github.com/takihito/field-cage/pull/139
+
 ## [v0.1.7](https://github.com/takihito/field-cage/compare/v0.1.6...v0.1.7) - 2026-11-16
 
 - block モードで非接続 UDP (sendto/sendmsg) を遮断する by @takihito in https://github.com/takihito/field-cage/pull/118
